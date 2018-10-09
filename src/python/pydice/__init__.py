@@ -104,6 +104,16 @@ class D:
     def __radd__(self, other):
         return self.__add__(other)
 
+    def __sub__(self, other):
+        if isinstance(other, int):
+            return D.sub(self, D.fixed(value=other))
+        return D.sub(self, other)
+
+    def __rsub__(self, other):
+        if isinstance(other, int):
+            return D.sub(D.fixed(value=other), self)
+        return D.sub(other, self)
+
     def __mul__(self, other):
         if not isinstance(other, int):
             raise ValueError('Can only multiply a distribution with an integer.')
@@ -118,6 +128,10 @@ class D:
 
     def __rmul__(self, other):
         return self.__mul__(other)
+
+    @staticmethod
+    def sub(a: 'D', b: 'D') -> 'D':
+        return D.add(a, b.negate)
 
     @staticmethod
     def add(a: 'D', b: 'D') -> 'D':
@@ -143,6 +157,14 @@ class D:
                 else:
                     d[value] = prob
         return D(distribution=d)
+
+    @property
+    def negate(self) -> 'D':
+        """
+        Return a distribution where all the values are negative versions of those in this distribution
+        :return:
+        """
+        return D(distribution={-v: self._dict[v] for v in self._dict})
 
     def __repr__(self):
         return '[' + ', '.join('{}:{}/{}'.format(key, self._dict[key].numerator, self._dict[key].denominator) for key in

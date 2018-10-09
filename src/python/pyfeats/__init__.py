@@ -6,10 +6,11 @@ from typing import List
 import requests
 from pydotplus.graphviz import Node, Edge, Dot
 
-DEFAULT_FEAT_URL = 'https://docs.google.com/spreadsheets/d/1XqQO21AyE2WtLwW0wSjA9ov74A9tmJmVJjrhPK54JHQ/export?format=csv'
+DEFAULT_FEAT_URL = \
+    'https://docs.google.com/spreadsheets/d/1XqQO21AyE2WtLwW0wSjA9ov74A9tmJmVJjrhPK54JHQ/export?format=csv'
 
 
-def read_feat_csv(csv_url=DEFAULT_FEAT_URL):
+def read_feat_csv(csv_url=DEFAULT_FEAT_URL) -> 'FeatDict':
     """
     Read in the feat spreadsheet as a CSV and parse it, extracting all non-mythic feats into a dict of feat objects
 
@@ -59,7 +60,7 @@ def read_feat_csv(csv_url=DEFAULT_FEAT_URL):
     return feats
 
 
-def traverse(selected_feats, traverse_parents=False, traverse_children=False):
+def traverse(selected_feats: ['Feat'], traverse_parents=False, traverse_children=False) -> ['Feat']:
     # Traverse the entire graph, finding all nodes attached to any nodes in the selected_feats input nodes
     found_nodes = []
 
@@ -88,21 +89,23 @@ def traverse(selected_feats, traverse_parents=False, traverse_children=False):
 
 class FeatDict(dict):
 
-    def find(self, regex):
+    def find(self, regex: str) -> ['Feat']:
         pattern = re.compile(regex.lower().strip())
         return list(self[key] for key in self if pattern.match(key))
 
-    def graph(self, regex, children=True):
+    def graph(self, regex: str, children=True) -> Dot:
         g = Dot(rankdir='LR', ranksep=0.8, nodesep=0.2, splines='false')
-        g.set_node_defaults(fontname='font-awesome', fontsize=12, style='rounded, filled', fillcolor='azure2', color='none')
-        for feat in self.simplify(traverse(traverse(self.find(regex), traverse_children=children), traverse_parents=True)):
+        g.set_node_defaults(fontname='font-awesome', fontsize=12, style='rounded, filled', fillcolor='azure2',
+                            color='none')
+        for feat in self.simplify(
+                traverse(traverse(self.find(regex), traverse_children=children), traverse_parents=True)):
             g.add_node(feat.node)
             for e in feat.parent_edges:
                 g.add_edge(e)
         return g
 
     @staticmethod
-    def simplify(selected_feats):
+    def simplify(selected_feats: ['Feat']) -> ['Feat']:
         # Given a set of feats, remove dependencies implied by transitivity
         finished = False
         while not finished:
@@ -117,7 +120,7 @@ class FeatDict(dict):
                                 finished = False
         return selected_feats
 
-    def get_feat(self, feat_name):
+    def get_feat(self, feat_name: str) -> 'Feat':
         # Handle oddities like spell and skill focus
         if re.match('spell focus*', feat_name.lower()):
             return self['spell focus']
@@ -183,7 +186,7 @@ NODE_LABEL_NO_PRE = """<
 
 
 @dataclass
-class Feat():
+class Feat:
     """Class to represent a single feat"""
     id: int
     name: str
@@ -196,14 +199,14 @@ class Feat():
     children: List['Feat'] = field(default_factory=list, init=False, repr=False)
 
     @property
-    def compound_name(self):
+    def compound_name(self) -> str:
         if self.type == 'Mythic':
             return self.name + ' (Mythic)'
         else:
             return self.name
 
     @property
-    def node(self):
+    def node(self) -> Node:
         filtered_prerequisites = list(
             [prereq.strip() for prereq in self.prerequisites.strip().rstrip('.').split(',') if
              prereq.strip() not in list([ancestor.name for ancestor in self.ancestors])])
@@ -212,17 +215,17 @@ class Feat():
             label = NODE_LABEL_NO_PRE.format(name=self.name)
         colour = 'azure2'
         if self.type == 'Combat':
-            colour='palegoldenrod'
+            colour = 'palegoldenrod'
         elif self.type == 'Teamwork':
-            colour='palegreen2'
+            colour = 'palegreen2'
         return Node(name=self.id, label=label, shape='polygon', sides=4, fillcolor=colour)
 
     @property
-    def parent_edges(self):
+    def parent_edges(self) -> [Edge]:
         return list([Edge(dst=self.id, src=parent.id, tailport='e', headport='w') for parent in self.parents])
 
     @property
-    def ancestors(self):
+    def ancestors(self) -> [Edge]:
         nodes = traverse([self], traverse_parents=True)
         nodes.remove(self)
         return nodes
