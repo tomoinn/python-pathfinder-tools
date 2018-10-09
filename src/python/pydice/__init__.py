@@ -68,7 +68,8 @@ class D:
     Instances of this class can either be constructed with a dict of int -> Fraction, in which case the dict is copied
     and used as the internal map of values to probabilities, or through the convenience method that takes an integer and
     constructs a probability distribution with n values from 1 to n with even probabilities. This is equivalent to the
-    distribution of a dice with n sides, so D(6) is a regular six sided dice and so on.
+    distribution of a dice with n sides, so D(6) is a regular six sided dice and so on. In addition, a string can be
+    supplied with the same format as used by pydice.parser.parse, i.e. '3d6+d8-7' or similar.
     """
 
     def __init__(self, distribution: {}):
@@ -81,6 +82,9 @@ class D:
         """
         if isinstance(distribution, int):
             self._dict = {value + 1: fractions.Fraction(1, distribution) for value in range(distribution)}
+        elif isinstance(distribution, str):
+            from pydice.parser import parse
+            self._dict = parse(distribution)._dict
         else:
             self._dict = copy.deepcopy(distribution)
 
