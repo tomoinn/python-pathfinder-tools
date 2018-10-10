@@ -1,56 +1,11 @@
 import copy
 import fractions
+import re
+from random import random
 
-
-def weapon_damage(hit_on: int, damage: 'D', critical_damage: 'D', critical=20) -> 'D':
-    """
-    Uses the Pathfinder game mechanics to calculate the distribution of damage done by a single attack, taking into
-    account the possibility of missing, hitting, critical hit with confirmation and critical hit without confirmation.
-    A miss happens if either the D20 roll is lower than the hit_on value or, where hit_on is adjusted to be a minimum
-    of 2 because a 1 is always a miss. The critical threat range of the weapon is specified as the minimum D20 roll to
-    cause a critical threat, defaulting to 20. The damage and critical damage are both distributions and can be
-    specified as e.g. 2*D(6)+1 using the class in this package.
-
-    :param hit_on:
-        The minimum value on a D20 to hit the target. If this is over 20 then only criticals will hit, if this is under
-        2 it is set to 2 as rolls of 1 are always misses.
-    :param damage:
-        The distribution used to calculate damage for a regular hit
-    :param critical_damage:
-        The distribution used to calculate damage for a confirmed critical
-    :param critical:
-        The critical threat range of the weapon, defaults to 20
-    :return:
-        A distribution representing damage values for this single attack. For iteratives etc, just add this result to
-        that from other calls to this function.
-    """
-    # Force hit_on to be between 2 and 20 inclusive, because 1 is always a miss
-    hit_on = min(max(hit_on, 2), 20)
-    # Critical hit range cannot extend below the to_hit value, so make it the max of the critical range and to_hit
-    critical = max(hit_on, critical)
-    # Misses on anything below the to_hit value
-    p_miss = D(20).p(max=hit_on - 1)
-    # Non-critical hit on anything between hit_on and below the critical range
-    p_hit = D(20).p(min=hit_on, max=critical - 1)
-    # Critical hit on anything at least the critical range, this is guaranteed to also be at least the to_hit value
-    p_critical = D(20).p(min=critical)
-    # Critical confirmation on at least the hit_on, ignoring the critical range
-    p_confirm_critical = D(20).p(min=hit_on)
-
-    # Critical damage distribution is the critical damage with the probability of confirming the hit, and the non-crit
-    # damage along with the regular damage distribution
-    d_critical = D.pick([
-        (critical_damage, p_confirm_critical),
-        (damage, 1 - p_confirm_critical)
-    ])
-
-    # Pick either a flat 0 distribution representing a miss, with p_miss, damage distribution with a regular non-crit
-    # hit, or the critical distribution (including checking for confirmation) defined above.
-    return D.pick([
-        (0, p_miss),
-        (damage, p_hit),
-        (d_critical, p_critical)
-    ])
+from rply import ParserGenerator, LexerGenerator
+from rply.lexergenerator import Lexer
+from rply.parsergenerator import LRParser
 
 
 class D:
@@ -72,21 +27,86 @@ class D:
     supplied with the same format as used by pydice.parser.parse, i.e. '3d6+d8-7' or similar.
     """
 
-    def __init__(self, distribution: {}):
+    def __init__(self, distribution: {}, check_probabilities_sum_to_one=True):
         """
         Create a new distribution
 
         :param distribution:
             A dict where keys are integers, and values are Fraction objects representing the probability of that integer
-            being 'rolled' in a random pick from the distribution.
+            being 'rolled' in a random pick from the distribution. Alternative, specify an int to create a flat dice
+            distribution with values between 1 and the specified value, or a string containing a parseable dice format.
         """
         if isinstance(distribution, int):
-            self._dict = {value + 1: fractions.Fraction(1, distribution) for value in range(distribution)}
+            self.__dict = {value + 1: fractions.Fraction(1, distribution) for value in range(distribution)}
         elif isinstance(distribution, str):
-            from pydice.parser import parse
-            self._dict = parse(distribution)._dict
+            self.__dict = parse(distribution).__dict
         else:
-            self._dict = copy.deepcopy(distribution)
+            self.__dict = copy.deepcopy(distribution)
+
+        # Remove any zero probability values as they interfere with min / max properties
+        self.__dict = {v: self.__dict[v] for v in self.__dict if self.__dict[v] > 0}
+
+        # Check that probabilities sum to 1 if not supressing checks
+        if check_probabilities_sum_to_one and sum([self.__dict[a] for a in self.__dict]) != 1:
+            raise ValueError('Probabilities in distribution must sum to 1')
+
+        self.__cumulative = []
+        __c = 0
+        for value in sorted(self.__dict):
+            __c += self.__dict[value]
+            self.__cumulative.append((value, __c))
+
+    @property
+    def max(self) -> int:
+        """
+        The highest value in the distribution
+        """
+        return max(self.__dict)
+
+    @property
+    def min(self) -> int:
+        """
+        The lowest value in the distribution
+        """
+        return min(self.__dict)
+
+    @property
+    def dist(self) -> {}:
+        """
+        Creates and returns a deep copy of the internal distribution dictionary of value -> fraction
+        """
+        return copy.deepcopy(self.__dict)
+
+    @property
+    def cumulative(self) -> {}:
+        """
+        Creates and returns a deep copy of the internal cumulative distribution of value -> fraction
+        """
+        return copy.deepcopy(self.__cumulative)
+
+    def roll(self, n=1):
+        """
+        Returns an array of length n containing n 'rolls' from this distribution
+
+        :param n:
+            The number of rolls needed
+        :return:
+            An array of the requested size containing rolls of the distribution
+        """
+        return list([self.r for _ in range(n)])
+
+    @property
+    def r(self):
+        """
+        Return a single roll of the distribution
+
+        :return:
+            An int value from a single roll
+        """
+        r = random()
+        for v, p in self.__cumulative:
+            if p >= r:
+                return v
 
     @staticmethod
     def fixed(value: int) -> 'D':
@@ -99,6 +119,180 @@ class D:
             The resultant fixed distribution
         """
         return D(distribution={value: fractions.Fraction(1, 1)})
+
+    @staticmethod
+    def sub(a: 'D', b: 'D') -> 'D':
+        """
+        Subtract one distribution from another. This creates a new distribution which represents the results of adding
+        the values rolled by the first distribution to those rolled by the second multiplied by -1. For example, a d6-d4
+        distribution would contain values from -3 to 5. Used by __sub__ and __rsub__ methods, it's almost certainly
+        easier to use those with regular subtraction than calling this function.
+
+        :param a:
+            Positive distribution
+        :param b:
+            Negative distribution
+        :return:
+            The sum of the two distributions, with the second being negated before adding.
+        """
+        return D.add(a, b.negate)
+
+    @staticmethod
+    def add(a: 'D', b: 'D') -> 'D':
+        """
+        Add two distributions to create a new one representing the distribution created by independently 'rolling' each
+        of the inputs and adding the values together. This is used by the __add__ and __radd__ as well as __mul__ and
+        __rmul__
+
+        :param a:
+            A distribution to add
+        :param b:
+            The other distribution to add
+        :return:
+            The derived distribution
+        """
+        d = {}
+        for va, pa in a.__dict.items():
+            for vb, pb in b.__dict.items():
+                value = va + vb
+                prob = pa * pb
+                if value in d:
+                    d[value] = d[value] + prob
+                else:
+                    d[value] = prob
+        return D(distribution=d)
+
+    @property
+    def negate(self) -> 'D':
+        """
+        Return a distribution where all the values are negative versions of those in this distribution
+        """
+        return D(distribution={-v: self.__dict[v] for v in self.__dict})
+
+    @property
+    def mean(self) -> fractions.Fraction:
+        """
+        Calculate the mean, defined as the sum of products of values and probabilities for all values in the dict. As
+        all probabilities are expressed as fractions this is a fraction.
+
+        :return:
+            The mean as a Fraction object
+        """
+        return sum([key * self.__dict[key] for key in self.__dict])
+
+    @property
+    def float_mean(self) -> float:
+        """
+        As with the mean, but coercing to a float for convenience
+
+        :return:
+            The mean as a float
+        """
+        return float(self.mean)
+
+    def p(self, min=None, max=None) -> fractions.Fraction:
+        """
+        Return the probability, as a Fraction, of a given range of values.
+
+        :param min:
+            The minimum allowed value, defaulting to None to not specify a lower bouond
+        :param max:
+            The maximum allowed value, defaulting to None to not specify an upper bound
+        :return:
+            The probability of a single 'roll' of this distribution returning a value in the specified range, defined
+            as a Fraction
+        """
+
+        def check(value):
+            if min is not None and value < min:
+                return False
+            if max is not None and value > max:
+                return False
+            return True
+
+        return sum([self.__dict[value] for value in self.__dict if check(value)])
+
+    def __scale(self, s) -> 'D':
+        """
+        Scales all the probability values by the specified value, which can be either a float or, preferably, a Fraction
+        object. This returns a new distribution which won't really make sense in itself as its probability values won't
+        actually add up to one. This is really only used with the pick function.
+
+        :param s:
+            A float or Fraction value by which all probabilities in the distribution should be scaled
+        :return:
+            A new distribution containing the scaled probabilities
+        """
+        if not isinstance(s, fractions.Fraction):
+            s = fractions.Fraction(s)
+        return D(distribution={value: self.__dict[value] * s for value in self.__dict},
+                 check_probabilities_sum_to_one=False)
+
+    @staticmethod
+    def pick(l: []) -> 'D':
+        """
+        Create and return a new distribution representing the results of picking exactly one of a set of distributions
+        with associated probabilities. These are specified as a list of tuples, where each tuple is a (distribution, p)
+        pair. The p values should sum to 1 across the entire list, a ValueError is raised otherwise.
+
+        This is used to represent choice points, such as using a different distribution to represent miss damage, hit
+        damage, or critical damage with probabilities for selecting each one.
+
+        :param l:
+            A list of (distribution, p) tuples representing mutually exclusive choices
+        :return:
+            The resultant distribution from that list of possible choices and probabilities
+        """
+
+        def dist_for(item):
+            if isinstance(item, int):
+                return D.fixed(item)
+            elif isinstance(item, str):
+                return D(item)
+            else:
+                return item
+
+        if sum([b for a, b in l]) != 1:
+            raise ValueError('Probabilities in pick must sum to 1')
+
+        d = {}
+        for (a, b) in l:
+            a = dist_for(a).__scale(b)
+            for value in a.__dict:
+                prob = a.__dict[value]
+                if value in d:
+                    d[value] = d[value] + prob
+                else:
+                    d[value] = prob
+        return D(distribution=d)
+
+    def extract(self, min=None, max=None) -> 'D':
+        """
+        Extract a range of values from this distribution and copy them into a new one, scaling probabilities such that
+        those in the result sum to 1. This can be used for bayesian operations where, given that we know a result range,
+        we want to know the relative probabilities of results within that range.
+
+        :param min:
+            The minimum value to pick from the distribution, defaults to None for no minimum
+        :param max:
+            The maximum value to pick from the distribution, defaults to None for no maximum
+        :return:
+            The extracted distribution
+        """
+
+        def check(value):
+            if min is not None and value < min:
+                return False
+            if max is not None and value > max:
+                return False
+            return True
+
+        new_dist = D(distribution={v: self.__dict[v] for v in self.__dict if check(v)},
+                     check_probabilities_sum_to_one=False)
+        if len(new_dist.__dict) == 0:
+            # If there are no items we can't normalise, so return a fixed 0 distribution
+            return D.fixed(0)
+        return new_dist.__scale(1 / new_dist.p())
 
     def __add__(self, other):
         if isinstance(other, int):
@@ -133,132 +327,93 @@ class D:
     def __rmul__(self, other):
         return self.__mul__(other)
 
-    @staticmethod
-    def sub(a: 'D', b: 'D') -> 'D':
-        return D.add(a, b.negate)
-
-    @staticmethod
-    def add(a: 'D', b: 'D') -> 'D':
-        """
-        Add two distributions to create a new one representing the distribution created by independently 'rolling' each
-        of the inputs and adding the values together. This is used by the __add__ and __radd__ as well as __mul__ and
-        __rmul__
-
-        :param a:
-            A distribution to add
-        :param b:
-            The other distribution to add
-        :return:
-            The derived distribution
-        """
-        d = {}
-        for va, pa in a._dict.items():
-            for vb, pb in b._dict.items():
-                value = va + vb
-                prob = pa * pb
-                if value in d:
-                    d[value] = d[value] + prob
-                else:
-                    d[value] = prob
-        return D(distribution=d)
-
-    @property
-    def negate(self) -> 'D':
-        """
-        Return a distribution where all the values are negative versions of those in this distribution
-        :return:
-        """
-        return D(distribution={-v: self._dict[v] for v in self._dict})
-
     def __repr__(self):
-        return '[' + ', '.join('{}:{}/{}'.format(key, self._dict[key].numerator, self._dict[key].denominator) for key in
-                               sorted(self._dict)) + ']'
+        return '[' + ', '.join(
+            '{}:{}/{}'.format(key, self.__dict[key].numerator, self.__dict[key].denominator) for key in
+            sorted(self.__dict)) + ']'
 
-    @property
-    def mean(self) -> fractions.Fraction:
+    def __len__(self):
         """
-        Calculate the mean, defined as the sum of products of values and probabilities for all values in the dict.
-
-        :return:
-            The mean as a Fraction object
+        The number of values in the distribution
         """
-        return sum([key * self._dict[key] for key in self._dict])
+        return len(self.__dict)
 
-    @property
-    def float_mean(self) -> float:
-        """
-        As with the mean, but coercing to a float for convenience
 
-        :return:
-            The mean as a float
-        """
-        return float(self.mean)
+def _build_parser() -> (LRParser, Lexer):
+    """
+    Build the parser and lexer for the dice format string, i.e. '3d6-d5+2'
 
-    def p(self, min=None, max=None) -> fractions.Fraction:
-        """
-        Return the probability, as a Fraction, of a given range of values.
+    :return:
+        A tuple of LRParser, Lexer for this format
+    """
+    lg = LexerGenerator()
 
-        :param min:
-            The minimum allowed value, defaulting to None to not specify a lower bouond
-        :param max:
-            The maximum allowed value, defaulting to None to not specify an upper bound
-        :return:
-            The probability of a single 'roll' of this distribution returning a value in the specified range, defined
-            as a Fraction
-        """
+    lg.add('PLUS', r'\+')
+    lg.add('MINUS', r'-')
+    lg.add('DICE', r'[d|D]\d+')
+    lg.add('NDICE', r'\d+[d|D]\d+')
+    lg.add('NUMBER', r'\d+')
+    lg.ignore(r'\s+')
 
-        def check(value):
-            if min is not None and value < min:
-                return False
-            if max is not None and value > max:
-                return False
-            return True
+    pg = ParserGenerator(tokens=['NDICE', 'DICE', 'NUMBER', 'PLUS', 'MINUS'],
+                         precedence=[('left', ['NDICE', 'DICE', 'NUMBER', 'PLUS', 'MINUS'])],
+                         cache_id='pydice_parser')
 
-        return sum([self._dict[value] for value in self._dict if check(value)])
+    @pg.production('main : expr')
+    def main(p):
+        return p[0]
 
-    def _scale(self, s) -> 'D':
-        """
-        Scales all the probability values by the specified value, which can be either a float or, preferably, a Fraction
-        object. This returns a new distribution which won't really make sense in itself as its probability values won't
-        actually add up to one. This is really only used with the pick function.
+    @pg.production('expr : expr PLUS expr')
+    @pg.production('expr : expr MINUS expr')
+    def expr_add_subtract(p):
+        lhs = p[0]
+        rhs = p[2]
+        if p[1].gettokentype() == 'PLUS':
+            return lhs + rhs
+        elif p[1].gettokentype() == 'MINUS':
+            return lhs - rhs
+        else:
+            raise AssertionError('No matching operator found!')
 
-        :param s:
-            A float or Fraction value by which all probabilities in the distribution should be scaled
-        :return:
-            A new distribution containing the scaled probabilities
-        """
-        if not isinstance(s, fractions.Fraction):
-            s = fractions.Fraction(s)
-        return D(distribution={value: self._dict[value] * s for value in self._dict})
+    @pg.production('expr : MINUS expr')
+    def expr_unary_negative(p):
+        rhs = p[1]
+        return rhs.negate
 
-    @staticmethod
-    def pick(l: []) -> 'D':
-        """
-        Create and return a new distribution representing the results of picking exactly one of a set of distributions
-        with associated probabilities. These are specified as a list of tuples, where each tuple is a (distribution, p)
-        pair. The p values should sum to 1 across the entire list, although this isn't currently checked. This is used
-        to represent choice points, such as using a different distribution to represent miss damage, hit damage, or
-        critical damage with probabilities for selecting each one.
+    @pg.production('expr : PLUS expr')
+    def expr_unary_positive(p):
+        return p[1]
 
-        :param l:
-            A list of (distribution, p) tuples representing mutually exclusive choices
-        :return:
-            The resultant distribution from that list of possible choices and probabilities
-        """
+    @pg.production('expr : DICE')
+    def expr_dice(p):
+        return D(int(p[0].getstr()[1:]))
 
-        def dist_for(item):
-            if isinstance(item, int):
-                return D.fixed(item)
-            else:
-                return item
+    @pg.production('expr : NDICE')
+    def expr_ndice(p):
+        n, d = re.split(r'[d|D]', p[0].getstr())
+        return int(n) * D(int(d))
 
-        d = {}
-        for (a, b) in l:
-            a = dist_for(a)._scale(b)
-            for value in a._dict:
-                prob = a._dict[value]
-                if value in d:
-                    d[value] = d[value] + prob
-                else:
-                    d[value] = prob
-        return D(distribution=d)
+    @pg.production('expr : NUMBER')
+    def expr_number(p):
+        return D.fixed(int(p[0].getstr()))
+
+    @pg.error
+    def handle_parse_error(token):
+        raise ValueError('Invalid dice format string, found a {} where not expected'.format(token.gettokentype()))
+
+    return pg.build(), lg.build()
+
+
+_p, _l = _build_parser()
+
+
+def parse(value: str) -> 'D':
+    """
+    Parse a standard dice string such as 'd4+5' or '2d20+4d6-2' and produce the corresponding distribution.
+
+    :param value:
+        A string to parse
+    :return:
+        The probability distribution of the parsed dice set
+    """
+    return _p.parse(_l.lex(value))
