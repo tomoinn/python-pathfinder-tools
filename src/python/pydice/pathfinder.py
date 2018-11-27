@@ -67,7 +67,7 @@ def reroll_distribution(roll=None, hit=None, depth=4) -> D:
     :param depth:
         The maximum number of re-rolls, defaults to 4 which seems to converge closely enough for most purposes. Setting
         this to zero means no re-rolls and will just return the original distribution. Defaults to 4, which seems enough
-        to converge sensibly (
+        to converge sensibly although up to 10 or 20 will show increasing convergence.
     :return:
         A distribution representing the results of applying these re-roll rules at most depth times
     """
