@@ -120,7 +120,7 @@ def make_pdf(images, pdf_filename):
     logging.info('make_pdf: Wrote {} images to PDF file {}'.format(len(images['images']), pdf_filename))
 
 
-def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, min_file_size=1024 * 100):
+def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, min_file_size=1024 * 500):
     """
     Uses the pdfimages tool from poppler-utils to extract images from a given page of the specified PDF.
 
@@ -139,17 +139,18 @@ def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, m
     """
     with tempfile.TemporaryDirectory() as dir:
         command = ['pdfimages', '-png', '-l', str(page), '-f', str(page), pdf_filename, dir + '/image']
-        logging.info(' '.join(command))
+        logging.info('extract_images_from_pdf: ' + ' '.join(command))
         subprocess.run(command, shell=False, check=True, capture_output=True)
-        logging.info('dir={}'.format(dir))
+        logging.info('extract_images_from_pdf: dir={}'.format(dir))
         for entry in scandir(path=dir):
-            if entry.name.endswith('png') and not entry.is_dir() and stat(
-                    dir + '/' + entry.name).st_size >= min_file_size:
+            filesize = stat(dir + '/' + entry.name).st_size
+            if entry.name.endswith('png') and not entry.is_dir() and filesize >= min_file_size:
                 im = Image.open(dir + '/' + entry.name)
                 width, height = im.size
                 if width >= min_width and height >= min_height:
                     logging.info(
-                        'extract_images_from_pdf: found image {} by {} in page : {}'.format(width, height, entry.name))
+                        'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
+                                                                                                 height, filesize))
                     yield im
 
 
