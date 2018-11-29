@@ -1,9 +1,10 @@
 import logging
 import math
+import re
 import subprocess
 import tempfile
 from os import scandir, stat
-from os.path import dirname
+from os.path import dirname, basename, abspath
 from pathlib import Path
 
 from PIL import Image, ImageEnhance
@@ -15,6 +16,33 @@ A4_HEIGHT = 210  # A4 landscape height in mm
 TORCH_PATH = None
 WAIFU2X_LUA_PATH = None
 WAIFU2X_MACOS_PATH = None
+
+
+def parse_filename(filename):
+    """
+    Parse a filename of the form name_WWxHH.png, i.e. deep_canyon_10x18.png, into a set of useful properties. Returns
+    a tuple containing the canonical filename supplied, the canonical name of the pdf to produce, the plain name with
+    the sizes stripped, and the width and height specified.
+
+    :param filename:
+        Filename to parse
+    :return:
+        A tuple of (filename, pdf_name, name, width, height)
+    :raise:
+        ValueError if the string can't be parsed in this format
+    """
+    filename = abspath(filename)
+    leaf_name = basename(filename)
+    m = re.match(r'(^\w+?)_*(\d+(?:\.\d*)?|\.\d+)x(\d+(?:\.\d*)?|\.\d+)\.png',
+                 leaf_name)
+    if m:
+        name = m.groups()[0]
+        width = float(m.groups()[1])
+        height = float(m.groups()[2])
+        pdf_name = dirname(filename) + '/' + name + '.pdf'
+        return filename, pdf_name, name, width, height
+    else:
+        raise ValueError('Filename not of the form name_WxH.png, was {}'.format(leaf_name))
 
 
 def split_image(im, squares_wide, squares_high, border=5, brighten=None, sharpen=None, saturation=None):
@@ -121,14 +149,19 @@ def make_pdf(images, pdf_filename):
     logging.info('make_pdf: Wrote {} images to PDF file {}'.format(len(images['images']), pdf_filename))
 
 
-def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, min_file_size=1024 * 500):
+def extract_images_from_pdf(pdf_filename, page=None, to_page=None, min_width=100, min_height=100,
+                            min_file_size=1024 * 500):
     """
     Uses the pdfimages tool from poppler-utils to extract images from a given page of the specified PDF.
 
     :param pdf_filename:
         Full path of the PDF to use. Specify your pathfinder scenario PDF here.
     :param page:
-        Page number to scan
+        Page number to scan, None to scan all pages
+    :param to_page:
+        Page number up to which to scan, ignored if page is None, if left at the default this is set to whatever value
+        page is set to to scan a single page, otherwise a range of pages can be specified from 'page' to 'to_page'
+        inclusive
     :param min_width:
         Minimum image width to include in the output iterator, defaults to 100 pixels
     :param min_height:
@@ -139,7 +172,12 @@ def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, m
         A lazy iterator over image objects corresponding to matching images
     """
     with tempfile.TemporaryDirectory() as dir:
-        command = ['pdfimages', '-png', '-l', str(page), '-f', str(page), pdf_filename, dir + '/image']
+        command = ['pdfimages', '-png']
+        if page is not None and to_page is None:
+            to_page = page
+        if page is not None:
+            command.extend(['-f', str(page), '-l', str(to_page)])
+        command.extend([pdf_filename, dir + '/image'])
         logging.info('extract_images_from_pdf: ' + ' '.join(command))
         subprocess.run(command, shell=False, check=True, capture_output=True)
         logging.info('extract_images_from_pdf: dir={}'.format(dir))
@@ -148,14 +186,15 @@ def extract_images_from_pdf(pdf_filename, page, min_width=100, min_height=100, m
             if entry.name.endswith('png') and not entry.is_dir() and filesize >= min_file_size:
                 im = Image.open(dir + '/' + entry.name)
                 width, height = im.size
-                if width >= min_width and height >= min_height:
+                if width >= min_width and height >= min_height and im.mode == 'RGB':
                     logging.info(
                         'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
                                                                                                  height, filesize))
                     yield im
 
 
-def run_waifu2x(image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path = None, scale=True, noise=0, force_cudnn=True):
+def run_waifu2x(image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path=None, scale=True, noise=0,
+                force_cudnn=True):
     """
     Call an existing instance of the waifu2x tool. Requires that this tool is properly installed along with torch,
     CUDA etc. Creates a temporary directory, writes the image file to it, runs waifu2x then reads back the result and
@@ -234,9 +273,9 @@ def run_waifu2x(image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_pat
             return image
 
         if scale:
-            command.extend(['-s','2'])
+            command.extend(['-s', '2'])
         else:
-            command.extend(['-s','1'])
+            command.extend(['-s', '1'])
 
         if noise is None:
             noise = 0
