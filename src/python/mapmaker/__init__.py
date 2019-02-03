@@ -4,11 +4,12 @@ import re
 import subprocess
 import tempfile
 from os import scandir, stat
-from os.path import dirname, basename, abspath
+from os.path import dirname, basename, abspath, isfile
 from pathlib import Path
 
 from PIL import Image, ImageEnhance
 from fpdf import FPDF
+from skimage.restoration import denoise_tv_chambolle as denoise
 
 A4_WIDTH = 297  # A4 landscape width in mm
 A4_HEIGHT = 210  # A4 landscape height in mm
@@ -45,7 +46,8 @@ def parse_filename(filename):
         raise ValueError('Filename not of the form name_WxH.png, was {}'.format(leaf_name))
 
 
-def split_image(im, squares_wide, squares_high, border=5, brighten=None, sharpen=None, saturation=None):
+def split_image(im: Image, squares_wide: float, squares_high: float, border=5, brighten=None, sharpen=None,
+                saturation=None):
     """
     Split an input image into a set of images which will tile across A4 paper, either horizontally or vertically as
     determined by which would take the fewer pages when naively printed. At the moment this doesn't attempt to be
@@ -149,7 +151,7 @@ def make_pdf(images, pdf_filename):
     logging.info('make_pdf: Wrote {} images to PDF file {}'.format(len(images['images']), pdf_filename))
 
 
-def extract_images_from_pdf(pdf_filename, page=None, to_page=None, min_width=100, min_height=100,
+def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_width=100, min_height=100,
                             min_file_size=1024 * 500):
     """
     Uses the pdfimages tool from poppler-utils to extract images from a given page of the specified PDF.
@@ -190,11 +192,27 @@ def extract_images_from_pdf(pdf_filename, page=None, to_page=None, min_width=100
                     logging.info(
                         'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
                                                                                                  height, filesize))
+                    image_number = int(entry.name[6:9])
+                    mask_name = f'image-{image_number + 1:03d}.png'
+                    if isfile(dir + '/' + mask_name):
+                        mask_im = Image.open(dir + '/' + mask_name)
+                        mask_width, mask_height = mask_im.size
+                        if mask_width == width and mask_height == height and mask_im.mode == 'L':
+                            logging.info(f'Found possible mask, mode is {mask_im.mode}, '
+                                         f'filename {mask_name}, combining')
+                            mask_command = ['convert', dir + '/' + entry.name, dir + '/' + mask_name, '-compose',
+                                            'CopyOpacity', '-composite', dir + '/' + entry.name]
+                            subprocess.run(mask_command, shell=False, check=True, capture_output=True)
+                            im = Image.open(dir + '/' + entry.name)
                     yield im
 
 
-def run_waifu2x(image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path=None, scale=True, noise=0,
-                force_cudnn=True):
+def total_variation_denoise(image: Image, weight: int = 10) -> Image:
+    return denoise(image, weight=weight, multichannel=True)
+
+
+def run_waifu2x(image: Image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path=None, scale=True, noise=0,
+                force_cudnn=True) -> Image:
     """
     Call an existing instance of the waifu2x tool. Requires that this tool is properly installed along with torch,
     CUDA etc. Creates a temporary directory, writes the image file to it, runs waifu2x then reads back the result and
