@@ -3,6 +3,8 @@ import math
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
+from enum import Enum
 from os import scandir, stat
 from os.path import dirname, basename, abspath, isfile
 from pathlib import Path
@@ -10,9 +12,6 @@ from pathlib import Path
 from PIL import Image, ImageEnhance
 from fpdf import FPDF
 from skimage.restoration import denoise_tv_chambolle as denoise
-
-A4_WIDTH = 297  # A4 landscape width in mm
-A4_HEIGHT = 210  # A4 landscape height in mm
 
 TORCH_PATH = None
 WAIFU2X_LUA_PATH = None
@@ -46,10 +45,49 @@ def parse_filename(filename):
         raise ValueError('Filename not of the form name_WxH.png, was {}'.format(leaf_name))
 
 
-def split_image(im: Image, squares_wide: float, squares_high: float, border=5, brighten=None, sharpen=None,
+class Paper(Enum):
+    """
+    Common paper sizes, used by the split_image and make_pdf functions to determine how images should be tiled across
+    the available paper space.
+    """
+
+    @dataclass
+    class PaperSize:
+        """
+        Defines a paper size
+        """
+        width: int
+        height: int
+        name: str
+
+    A4 = PaperSize(width=297, height=210, name='A4')
+    A3 = PaperSize(width=420, height=297, name='A3')
+    A2 = PaperSize(width=594, height=420, name='A2')
+    A1 = PaperSize(width=841, height=594, name='A1')
+    A0 = PaperSize(width=1189, height=841, name='A0')
+
+    @property
+    def dimensions(self):
+        return self.height, self.width
+
+    @property
+    def width(self):
+        return self.value.width
+
+    @property
+    def height(self):
+        return self.value.height
+
+    @property
+    def name(self):
+        return self.value.name
+
+
+def split_image(im: Image, squares_wide: float, squares_high: float, border=5, paper=Paper.A4, brighten=None,
+                sharpen=None,
                 saturation=None):
     """
-    Split an input image into a set of images which will tile across A4 paper, either horizontally or vertically as
+    Split an input image into a set of images which will tile across the paper, either horizontally or vertically as
     determined by which would take the fewer pages when naively printed. At the moment this doesn't attempt to be
     clever and stack multiple small images on a single page.
 
@@ -64,6 +102,8 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border=5, b
         all the way up to the edge of the paper. Unlike some poster making tools, this is not a border for the assembled
         result, it's for each single page. It won't change the size of the output, but it may mean you need more paper
         to allow for that same size once the border is trimmed off. Defaults to 5mm for my LaserJet CP1515n.
+    :param paper:
+        An instance of Paper specifying the dimensions of the paper to use when tiling.
     :param brighten:
         Set to >1.0 to brighten the image before splitting, <1.0 to darken, or leave as None for no effect
     :param sharpen:
@@ -95,21 +135,21 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border=5, b
 
     def get_page_size():
 
-        pages_horizontal_l, pages_vertical_l = math.ceil(width_mm / (A4_WIDTH - border * 2)), math.ceil(
-            height_mm / (A4_HEIGHT - border * 2))
-        pages_horizontal_p, pages_vertical_p = math.ceil(width_mm / (A4_HEIGHT - border * 2)), math.ceil(
-            height_mm / (A4_WIDTH - border * 2))
+        pages_horizontal_l, pages_vertical_l = math.ceil(width_mm / (paper.width - border * 2)), math.ceil(
+            height_mm / (paper.height - border * 2))
+        pages_horizontal_p, pages_vertical_p = math.ceil(width_mm / (paper.height - border * 2)), math.ceil(
+            height_mm / (paper.width - border * 2))
 
         if pages_horizontal_p * pages_vertical_p > pages_horizontal_l * pages_vertical_l:
             # Use landscape orientation
             logging.info(
                 'split_image: Using landscape orientation, {} by {} pages'.format(pages_horizontal_l, pages_vertical_l))
-            return 'L', pages_horizontal_l, pages_vertical_l, A4_WIDTH - border * 2, A4_HEIGHT - border * 2
+            return 'L', pages_horizontal_l, pages_vertical_l, paper.width - border * 2, paper.height - border * 2
         else:
             # Use Portrait orientation
             logging.info(
                 'split_image: Using portrait orientation, {} by {} pages'.format(pages_horizontal_p, pages_vertical_p))
-            return 'P', pages_horizontal_p, pages_vertical_p, A4_HEIGHT - border * 2, A4_WIDTH - border * 2
+            return 'P', pages_horizontal_p, pages_vertical_p, paper.height - border * 2, paper.width - border * 2
 
     orientation, pages_horizontal, pages_vertical, page_width, page_height = get_page_size()
 
@@ -125,7 +165,8 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border=5, b
             'images': {'{}_{}'.format(x, y): crop_for(x, y) for x in range(pages_horizontal) for y in
                        range(pages_vertical)},
             'orientation': orientation,
-            'border': border}
+            'border': border,
+            'paper': paper}
 
 
 def make_pdf(images, pdf_filename):
@@ -138,7 +179,7 @@ def make_pdf(images, pdf_filename):
         Full name of the PDF to write
     """
     logging.info('make_pdf: Building PDF file {} from image data'.format(pdf_filename))
-    pdf = FPDF(orientation=images['orientation'], unit='mm', format='A4')
+    pdf = FPDF(orientation=images['orientation'], unit='mm', format=images['paper'].dimensions)
     ppm = images['pixels_per_mm']
     with tempfile.TemporaryDirectory() as dirpath:
         for coords, image in images['images'].items():
