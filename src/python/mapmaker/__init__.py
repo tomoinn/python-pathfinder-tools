@@ -60,15 +60,15 @@ class Paper(Enum):
         height: int
         name: str
 
-    A4 = PaperSize(width=297, height=210, name='A4')
-    A3 = PaperSize(width=420, height=297, name='A3')
-    A2 = PaperSize(width=594, height=420, name='A2')
-    A1 = PaperSize(width=841, height=594, name='A1')
-    A0 = PaperSize(width=1189, height=841, name='A0')
+    A4 = PaperSize(height=297, width=210, name='A4')
+    A3 = PaperSize(height=420, width=297, name='A3')
+    A2 = PaperSize(height=594, width=420, name='A2')
+    A1 = PaperSize(height=841, width=594, name='A1')
+    A0 = PaperSize(height=1189, width=841, name='A0')
 
     @property
     def dimensions(self):
-        return self.height, self.width
+        return self.width, self.height
 
     @property
     def width(self):
@@ -83,9 +83,9 @@ class Paper(Enum):
         return self.value.name
 
 
-def split_image(im: Image, squares_wide: float, squares_high: float, border=5, paper=Paper.A4, brighten=None,
-                sharpen=None,
-                saturation=None):
+def split_image(im: Image, squares_wide: float, squares_high: float, border_north=5, border_east=5, border_west=5,
+                border_south=5, overlap_east=10, overlap_south=10, paper=Paper.A4, brighten=None,
+                sharpen=None, saturation=None):
     """
     Split an input image into a set of images which will tile across the paper, either horizontally or vertically as
     determined by which would take the fewer pages when naively printed. At the moment this doesn't attempt to be
@@ -97,11 +97,20 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border=5, p
         The number of 1 inch squares along the width of the input image
     :param squares_high:
         The number of 1 inch squares along the height of the input image
-    :param border:
-        The border to specify per printed page in mm, this is used to cope with printers not being able to print
-        all the way up to the edge of the paper. Unlike some poster making tools, this is not a border for the assembled
-        result, it's for each single page. It won't change the size of the output, but it may mean you need more paper
-        to allow for that same size once the border is trimmed off. Defaults to 5mm for my LaserJet CP1515n.
+    :param border_north:
+        North border (portrait orientation) in mm
+    :param border_east:
+        East border (portrait orientation) in mm
+    :param border_south:
+        South border (portrait orientation) in mm
+    :param border_west:
+        West border (portrait orientation) in mm
+    :param overlap_east:
+        The number of mm by which the east edge (portrait) of each sheet will be extended when printing. This allows
+        for easier taping of multiple pages as it's no longer so critical where the paper is cut. Defaults to 0.
+    :param overlap_south:
+        The number of mm by which the south edge (portrait) of each sheet will be extended when printing. This allows
+        for easier taping of multiple pages as it's no longer so critical where the paper is cut. Defaults to 0.
     :param paper:
         An instance of Paper specifying the dimensions of the paper to use when tiling.
     :param brighten:
@@ -135,37 +144,65 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border=5, p
 
     def get_page_size():
 
-        pages_horizontal_l, pages_vertical_l = math.ceil(width_mm / (paper.width - border * 2)), math.ceil(
-            height_mm / (paper.height - border * 2))
-        pages_horizontal_p, pages_vertical_p = math.ceil(width_mm / (paper.height - border * 2)), math.ceil(
-            height_mm / (paper.width - border * 2))
+        printable_width = paper.width - (border_east + border_west)
+        printable_height = paper.height - (border_north + border_south)
+
+        def pages(size, printable_size, overlap):
+            if math.ceil(size / printable_size) == 1:
+                return 1
+            return math.ceil(size / (printable_size + overlap))
+
+        pages_horizontal_p = pages(width_mm, printable_width, overlap_east)
+        pages_vertical_p = pages(height_mm, printable_height, overlap_south)
+        pages_horizontal_l = pages(width_mm, printable_height, overlap_south)
+        pages_vertical_l = pages(height_mm, printable_width, overlap_east)
+
+        def zero_if_one(test, value):
+            if test == 1:
+                return 0
+            return value
 
         if pages_horizontal_p * pages_vertical_p > pages_horizontal_l * pages_vertical_l:
             # Use landscape orientation
             logging.info(
                 'split_image: Using landscape orientation, {} by {} pages'.format(pages_horizontal_l, pages_vertical_l))
-            return 'L', pages_horizontal_l, pages_vertical_l, paper.width - border * 2, paper.height - border * 2
+            return 'L', pages_horizontal_l, pages_vertical_l, \
+                   printable_height - zero_if_one(pages_horizontal_l, overlap_south), \
+                   printable_width - zero_if_one(pages_vertical_l, overlap_east)
         else:
             # Use Portrait orientation
             logging.info(
                 'split_image: Using portrait orientation, {} by {} pages'.format(pages_horizontal_p, pages_vertical_p))
-            return 'P', pages_horizontal_p, pages_vertical_p, paper.height - border * 2, paper.width - border * 2
+            return 'P', pages_horizontal_p, pages_vertical_p, \
+                   printable_width - zero_if_one(pages_horizontal_p, overlap_east), \
+                   printable_height - zero_if_one(pages_vertical_p, overlap_south)
 
     orientation, pages_horizontal, pages_vertical, page_width, page_height = get_page_size()
 
     pixel_width_page = page_width * pixels_per_mm
     pixel_height_page = page_height * pixels_per_mm
 
+    if orientation == 'P':
+        overlap_east_pixels = pixels_per_mm * overlap_east
+        overlap_south_pixels = pixels_per_mm * overlap_south
+        borders = [border_north, border_east + overlap_east, border_south + overlap_south, border_west]
+    else:
+        overlap_east_pixels = pixels_per_mm * overlap_south
+        overlap_south_pixels = pixels_per_mm * overlap_east
+        borders = [border_east, border_south + overlap_east, border_west + overlap_south, border_north]
+
     def crop_for(page_x, page_y):
         return im.crop((page_x * pixel_width_page, page_y * pixel_height_page,
-                        min(width_pixels, (page_x + 1) * pixel_width_page),
-                        min(height_pixels, (page_y + 1) * pixel_height_page)))
+                        min(width_pixels, (page_x + 1) * pixel_width_page + overlap_east_pixels),
+                        min(height_pixels, (page_y + 1) * pixel_height_page + overlap_south_pixels)))
 
     return {'pixels_per_mm': pixels_per_mm,
             'images': {'{}_{}'.format(x, y): crop_for(x, y) for x in range(pages_horizontal) for y in
                        range(pages_vertical)},
             'orientation': orientation,
-            'border': border,
+            'border': borders,
+            'pages_horizontal': pages_horizontal,
+            'pages_vertical': pages_vertical,
             'paper': paper}
 
 
@@ -181,12 +218,70 @@ def make_pdf(images, pdf_filename):
     logging.info('make_pdf: Building PDF file {} from image data'.format(pdf_filename))
     pdf = FPDF(orientation=images['orientation'], unit='mm', format=images['paper'].dimensions)
     ppm = images['pixels_per_mm']
+    border_north, border_east, border_south, border_west = images['border']
+    if images['orientation'] == 'P':
+        page_width, page_height = images['paper'].dimensions
+    else:
+        page_height, page_width = images['paper'].dimensions
+
+    def tick(x, y, size=5, gap=1, n=False, e=False, s=False, w=False, dash=False):
+        line = pdf.line
+        if dash:
+            line = pdf.dashed_line
+        if w:
+            if x <= size:
+                line(x - gap, y, 0, y)
+            else:
+                line(x - gap, y, x - size)
+        if e:
+            if page_width - x <= size:
+                line(x + gap, y, page_width, y)
+            else:
+                line(x + gap, y, x + size, y)
+        if n:
+            if y <= size:
+                line(x, y - gap, x, 0)
+            else:
+                line(x, y - gap, x, y - size)
+        if s:
+            if page_height - y <= size:
+                line(x, y + gap, x, page_height)
+            else:
+                line(x, y + gap, x, y + size)
+
     with tempfile.TemporaryDirectory() as dirpath:
         for coords, image in images['images'].items():
             pdf.add_page()
+
+            m = re.match(r'(\d+)_(\d+)', coords)
+            x = int(m.groups()[0])
+            y = int(m.groups()[1])
+
             im_width, im_height = image.size
+
+            im_width_mm = im_width / ppm
+            im_height_mm = im_height / ppm
+            last_vertical = y == images['pages_vertical'] - 1
+            last_horizontal = x == images['pages_horizontal'] - 1
+
+            # Always position the top left one the same
+            tick(border_west, border_north, n=True, w=True)
+            tick(border_west, border_north + im_height_mm, s=True, w=True)
+            tick(border_west + im_width_mm, border_north + im_height_mm, e=True, s=True)
+            tick(border_west + im_width_mm, border_north, e=True, n=True)
+
+            if not last_horizontal:
+                tick(page_width - border_east, im_height_mm + border_north, s=True, dash=True)
+                tick(page_width - border_east, border_north, n=True, dash=True)
+
+            if not last_vertical:
+                tick(border_west, page_height - border_south, w=True, dash=True)
+                tick(border_west + im_width_mm, page_height - border_south, e=True, dash=True)
+
+            # tick(page_width - border_east, border_north, n=True, e=True)
+            # tick(page_width - border_east, page_height - border_south, e=True, s=True)
             image.save('{}/{}.png'.format(dirpath, coords))
-            pdf.image('{}/{}.png'.format(dirpath, coords), images['border'], images['border'], im_width / ppm,
+            pdf.image('{}/{}.png'.format(dirpath, coords), border_west, border_north, im_width / ppm,
                       im_height / ppm)
     pdf.output(pdf_filename, 'F')
     logging.info('make_pdf: Wrote {} images to PDF file {}'.format(len(images['images']), pdf_filename))

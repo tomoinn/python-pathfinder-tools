@@ -18,6 +18,7 @@ parser = ArgumentParser()
 parser.add_argument('input_dir', type=str, help='search INPUT_DIR for map images of form name_WWxHH.png')
 parser.add_argument('output_dir', type=str, help='write images to OUTPUT_DIR, will be created if not found')
 parser.add_argument('-p', '--padding', type=float, help='padding per output page in mm, default 5mm', default=5)
+parser.add_argument('-o', '--overlap', type=float, help='overlap on bottom right edges in mm, default 3mm', default=3)
 parser.add_argument('-c', '--colour', type=float, help='saturation, 0.0-2.0, default 1.0')
 parser.add_argument('-s', '--sharpen', type=float, help='sharpen, 0.0-2.0, default 1.1', default=1.1)
 parser.add_argument('-b', '--brighten', type=float, help='brighten, 0.0-2.0, default 1.2', default=1.2)
@@ -30,6 +31,7 @@ page_border = options.padding
 saturation = options.colour
 sharpen = options.sharpen
 brighten = options.brighten
+overlap = options.overlap
 
 if not Path(input_dir).is_dir():
     logging.error('Input directory {} not found, aborting'.format(input_dir))
@@ -52,7 +54,10 @@ for entry in scandir(path=input_dir):
         image = mapmaker.run_waifu2x(image, scale=True, noise=2)
         image = mapmaker.run_waifu2x(image, scale=True, noise=None)
         split = mapmaker.split_image(im=image, squares_wide=width, squares_high=height,
-                                     border=page_border, brighten=brighten, sharpen=sharpen, saturation=saturation)
+                                     border_north=page_border, border_east=page_border, border_south=page_border,
+                                     border_west=page_border,
+                                     brighten=brighten, sharpen=sharpen, saturation=saturation, overlap_east=overlap,
+                                     overlap_south=overlap)
         mapmaker.make_pdf(split, pdf_filename)
     except ValueError:
         logging.warning('Unable to parse details from {}, skipping'.format(entry.name))
