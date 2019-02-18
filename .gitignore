@@ -168,3 +168,7 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+/scripts/pathfinder_feats.csv
+pathfinder_spells.csv
+scripts/pathfinder_feats.csv
+scripts/pathfinder_spells.csv

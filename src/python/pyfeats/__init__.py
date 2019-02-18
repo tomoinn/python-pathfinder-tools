@@ -1,7 +1,9 @@
 import csv
 import re
 from dataclasses import dataclass, field
+from os.path import isfile
 from typing import List
+from urllib.request import urlretrieve
 
 import requests
 from pydotplus.graphviz import Node, Edge, Dot
@@ -9,55 +11,80 @@ from pydotplus.graphviz import Node, Edge, Dot
 DEFAULT_FEAT_URL = \
     'https://docs.google.com/spreadsheets/d/1XqQO21AyE2WtLwW0wSjA9ov74A9tmJmVJjrhPK54JHQ/export?format=csv'
 
+CACHE_FILE_NAME = 'pathfinder_feats.csv'
 
-def read_feat_csv(csv_url=DEFAULT_FEAT_URL) -> 'FeatDict':
+
+def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDict':
     """
-    Read in the feat spreadsheet as a CSV and parse it, extracting all non-mythic feats into a dict of feat objects
+    Read in the feat spreadsheet as a CSV and parse it, extracting all non-mythic feats into a dict of feat objects. If
+    run with cache_feats set to true (the default) it will first look for a file 'pathfinder_feats.csv' in the current
+    working directory. If it finds it, it will use that instead of the download - if absent and set to true this will
+    create the file, subsequent invocations will then use it.
+
+    :param csv_url:
+        Fully qualified URL of the feat CSV. By default this directs to the google sheet for the OGL content, but you
+        can override this here.
+    :param cache_feats:
+        Boolean flag, if set to true then this will use a cached copy of the feat CSV if available, and populate the
+        cache if not. If set to false it ignores caching entirely - downloading the feat CSV every time and not touching
+        the cached copy if any.
 
     :return: a dict of feat name to Feat
     """
-    response = requests.get(csv_url)
-    reader = csv.reader(response.content.decode('utf-8').splitlines(), delimiter=',')
-    # Skip the header row
-    reader.__next__()
 
-    def build_feat(row):
-        feat_id, name, feat_type, description, prerequisites, prerequisite_feats, benefit, normal, special, source, \
-        fulltext, teamwork, critical, grit, style, performance, racial, companion_familiar, race_name, note, goal, \
-        completion_benefit, multiples, suggested_traits, prerequisite_skills, panache, betrayal, targeting, esoteric, \
-        stare, weapon_mastery, item_mastery, armor_mastery, shield_mastery, blood_hex, trick = row
-        # Extract all the fields in case we need them at some point
-        return Feat(id=feat_id, name=name, type=feat_type, description=description, fulltext=benefit,
-                    prerequisites=prerequisites, prerequisite_feats=prerequisite_feats)
+    def build_feat_dict(reader) -> 'FeatDict':
+        # Skip the header row
+        reader.__next__()
 
-    # Build a dict from compound name to Feat object for all feats other than mythic ones, PFS won't use them and they
-    # just confuse the matching system
-    feats = FeatDict(
-        (feat.compound_name.lower(), feat) for feat in [build_feat(row) for row in reader if row[2] != 'Mythic'])
+        def build_feat(row):
+            feat_id, name, feat_type, description, prerequisites, prerequisite_feats, benefit, normal, special, \
+            source, fulltext, teamwork, critical, grit, style, performance, racial, companion_familiar, race_name, \
+            note, goal, completion_benefit, multiples, suggested_traits, prerequisite_skills, panache, betrayal, \
+            targeting, esoteric, stare, weapon_mastery, item_mastery, armor_mastery, shield_mastery, blood_hex, trick \
+                = row
+            # Extract all the fields in case we need them at some point
+            return Feat(id=feat_id, name=name, type=feat_type, description=description, fulltext=benefit,
+                        prerequisites=prerequisites, prerequisite_feats=prerequisite_feats)
 
-    # Add in dummy feats for dependencies on Weapon Proficiency and Shield Proficiency
-    feats['weapon proficiency'] = Feat(id=100001, name='Weapon Proficiency', type='Combat',
-                                       description='You are proficient in a given weapon',
-                                       fulltext='You are proficient in a given weapon', prerequisite_feats='',
-                                       prerequisites='')
-    feats['shield proficiency'] = Feat(id=100002, name='Shield Proficiency', type='Combat',
-                                       description='You are proficient in a given shield type',
-                                       fulltext='You are proficient in a given shield type', prerequisite_feats='',
-                                       prerequisites='')
+        # Build a dict from compound name to Feat object for all feats other than mythic ones, PFS won't use them and
+        # they just confuse the matching system
+        feats = FeatDict(
+            (feat.compound_name.lower(), feat) for feat in [build_feat(row) for row in reader if row[2] != 'Mythic'])
 
-    # Scan dependencies and build a graph structure by adding to the parent and child lists in the Feat objects
-    for feat_name, feat in feats.items():
-        if feat.prerequisite_feats:
-            for required_feat_raw in re.split(r'[,|]| or ', feat.prerequisite_feats):
-                if required_feat_raw and required_feat_raw.strip().lower() not in ['evasion', 'sleight of hand',
-                                                                                   'spiked gauntlet)', 'bluff',
-                                                                                   'diplomacy', 'knowledge (planes) 3',
-                                                                                   'enhanced morale']:
-                    required_feat = feats.get_feat(required_feat_raw.strip().lower())
-                    feat.parents.append(required_feat)
-                    required_feat.children.append(feat)
+        # Add in dummy feats for dependencies on Weapon Proficiency and Shield Proficiency
+        feats['weapon proficiency'] = Feat(id=100001, name='Weapon Proficiency', type='Combat',
+                                           description='You are proficient in a given weapon',
+                                           fulltext='You are proficient in a given weapon', prerequisite_feats='',
+                                           prerequisites='')
+        feats['shield proficiency'] = Feat(id=100002, name='Shield Proficiency', type='Combat',
+                                           description='You are proficient in a given shield type',
+                                           fulltext='You are proficient in a given shield type', prerequisite_feats='',
+                                           prerequisites='')
 
-    return feats
+        # Scan dependencies and build a graph structure by adding to the parent and child lists in the Feat objects
+        for feat_name, feat in feats.items():
+            if feat.prerequisite_feats:
+                for required_feat_raw in re.split(r'[,|]| or ', feat.prerequisite_feats):
+                    if required_feat_raw and required_feat_raw.strip().lower() not in ['evasion', 'sleight of hand',
+                                                                                       'spiked gauntlet)', 'bluff',
+                                                                                       'diplomacy',
+                                                                                       'knowledge (planes) 3',
+                                                                                       'enhanced morale']:
+                        required_feat = feats.get_feat(required_feat_raw.strip().lower())
+                        feat.parents.append(required_feat)
+                        required_feat.children.append(feat)
+
+        return feats
+
+    if not cache_feats:
+        response = requests.get(csv_url)
+        reader = csv.reader(response.content.decode('utf-8').splitlines(), delimiter=',')
+        return build_feat_dict(reader)
+    else:
+        if not isfile(CACHE_FILE_NAME):
+            urlretrieve(csv_url, CACHE_FILE_NAME)
+            with open(CACHE_FILE_NAME) as file:
+                return build_feat_dict(csv.reader(file, delimiter=','))
 
 
 def traverse(selected_feats: ['Feat'], traverse_parents=False, traverse_children=False) -> ['Feat']:
