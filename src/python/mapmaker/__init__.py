@@ -33,7 +33,8 @@ def parse_filename(filename):
     """
     filename = abspath(filename)
     leaf_name = basename(filename)
-    m = re.match(r'(^\w+?)_*(\d+(?:\.\d*)?|\.\d+)x(\d+(?:\.\d*)?|\.\d+)\.png',
+    # Match in the form foo_bar_12.4x25.3.png and extract the name, 12.4, and 25.3 bits
+    m = re.match(r'(^\w+?)_*(\d+(?:\.\d*)?|\.\d+)x(\d+(?:\.\d*)?|\.\d+)\.png$',
                  leaf_name)
     if m:
         name = m.groups()[0]
@@ -81,6 +82,88 @@ class Paper(Enum):
     @property
     def name(self):
         return self.value.name
+
+
+def process_image_with_border(im: Image, squares_wide: float, squares_high: float, border_north=5, border_east=5,
+                              border_west=5, border_south=5, brighten=None, sharpen=None, saturation=None):
+    """
+    Process an image and calculate sizes, but do not split. This is used when we want to obtain a PDF of a single page
+    sized exactly to the image rather than splitting an image across multiple known sized pages. Some print houses can
+    accept this as an input to custom sized printing, if we're using those we don't want to split up the image or use
+    a paper size larger than we need.
+
+    :param im:
+        An Image to process
+    :param squares_wide:
+        The number of 1 inch squares along the width of the input image
+    :param squares_high:
+        The number of 1 inch squares along the height of the input image
+    :param border_north:
+        North border (portrait orientation) in mm
+    :param border_east:
+        East border (portrait orientation) in mm
+    :param border_south:
+        South border (portrait orientation) in mm
+    :param border_west:
+        West border (portrait orientation) in mm
+    :param brighten:
+        Set to >1.0 to brighten the image before splitting, <1.0 to darken, or leave as None for no effect
+    :param sharpen:
+        Set to >1.0 to shapen the image before splitting.
+    :param saturation:
+        Set to >1.0 to enhance colour, <1.0 to remove it, None for no effect
+    :return:
+        Dict of image, image_width, image_height, margin_left, margin_top, page_width, page_height where all dimensions
+        are specified in mm. This dict can be passed directly into process_single_image_pdf
+    """
+    width_pixels, height_pixels = im.size
+    logging.info('process_image_with_border: Image is {} x {} pixels'.format(width_pixels, height_pixels))
+    pixels_per_mm = min(width_pixels / (squares_wide * 25.4), height_pixels / (squares_high * 25.4))
+    logging.info('process_image_with_border: Calculated {} pixels per mm'.format(pixels_per_mm))
+    # Apply enhancements if required
+    if brighten is not None:
+        logging.info('process_image_with_border: Applying brighten {}'.format(brighten))
+        im = ImageEnhance.Brightness(im).enhance(brighten)
+    if sharpen is not None:
+        logging.info('process_image_with_border: Applying sharpen {}'.format(sharpen))
+        im = ImageEnhance.Sharpness(im).enhance(sharpen)
+    if saturation is not None:
+        logging.info('process_image_with_border: Applying saturation {}'.format(saturation))
+        im = ImageEnhance.Color(im).enhance(saturation)
+    image_width_mm = width_pixels / pixels_per_mm
+    image_height_mm = height_pixels / pixels_per_mm
+
+    return {
+        'image': im,
+        'image_width': image_width_mm,
+        'image_height': image_height_mm,
+        'margin_left': border_west,
+        'margin_top': border_north,
+        'page_width': image_width_mm + border_west + border_east,
+        'page_height': image_height_mm + border_north + border_south
+    }
+
+
+def make_single_page_pdf(image_spec: {}, pdf_filename: str):
+    """
+    Take the processed image from process_image_with_border and produce a PDF file with those exact dimensions and a
+    single page.
+
+    :param image_spec:
+        Return from process_image_with_border
+    :param filename:
+        Filename to write
+    """
+    pdf = FPDF(unit='mm', format=(image_spec['page_width'], image_spec['page_height']))
+    with tempfile.TemporaryDirectory() as dirpath:
+        pdf.add_page()
+        image_spec['image'].save(f'{dirpath}/image.png')
+        pdf.image(f'{dirpath}/image.png',
+                  image_spec['margin_left'],
+                  image_spec['margin_top'],
+                  image_spec['image_width'],
+                  image_spec['image_height'])
+        pdf.output(pdf_filename, 'F')
 
 
 def split_image(im: Image, squares_wide: float, squares_high: float, border_north=5, border_east=5, border_west=5,
@@ -232,7 +315,7 @@ def make_pdf(images, pdf_filename):
             if x <= size:
                 line(x - gap, y, 0, y)
             else:
-                line(x - gap, y, x - size)
+                line(x - gap, y, x - size, y)
         if e:
             if page_width - x <= size:
                 line(x + gap, y, page_width, y)

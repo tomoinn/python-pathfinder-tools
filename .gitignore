@@ -172,3 +172,4 @@ venv.bak/
 pathfinder_spells.csv
 scripts/pathfinder_feats.csv
 scripts/pathfinder_spells.csv
+/scripts/pathfinder_spells.csv

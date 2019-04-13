@@ -155,19 +155,45 @@ class SpellMeta:
 @dataclass(frozen=True, eq=True)
 @total_ordering
 class Spell(SpellMeta):
+    """
+    Subclass of :class:`spells.SpellMeta` that specialises that class by specifying a casting class and therefore a
+    spell level. This is an immutable, sortable, class.
+    """
     caster_class: CasterClass
 
     @staticmethod
     def from_spell_meta(meta: SpellMeta, caster_class: CasterClass) -> 'Spell':
+        """
+        Build an instance of :class:`spells.Spell` from a combination of a :class:`spells.SpellMeta` and
+        :class:`spells.CastingClass`
+
+        :param meta:
+            The metadata for the spell.
+        :param caster_class:
+            The casting class used to determine whether the spell is valid, and, if so, the level for that class.
+        :return:
+            An instance of :class:`spells.Spell` specialised for this class.
+        :raises:
+            ValueError if the specified class can't cast this spell at all.
+        """
         if caster_class not in meta.levels:
             raise ValueError(f'Class {caster_class.name} cannot cast {meta.name}')
         return Spell(caster_class=caster_class, **meta.__dict__)
 
     @property
     def level(self) -> Optional[int]:
+        """
+        :return:
+            The level of this spell when cast by the class defined on creation.
+        """
         return self.levels[self.caster_class]
 
     def __lt__(self, other):
+        """
+        Make :class:`spells.Spell` a total order. Spells are ordered first by casting class, then by spell level for
+        that class, then by the normal ordering on spell name.
+        """
+
         def o(s: 'Spell') -> int:
             return s.caster_class.value * 10 + s.level
 
@@ -184,6 +210,18 @@ class AllSpells:
     """
 
     def __init__(self, csv_url: str = DEFAULT_SPELL_URL, cache_spells=True):
+        """
+        Create a new object containing all available spells. This will either retrieve from the internet or use a local
+        cached copy.
+
+        :param csv_url:
+            Specify to override the URL for a CSV download of all spells. Defaults to the google sheets download from
+            the pathfinder community.
+        :param cache_spells:
+            Defaults to True, set to false to disable caching. If this is set to true then the first time this is called
+            the CSV file will be downloaded to the working directory, subsequent calls will use this local copy rather
+            than the online one.
+        """
 
         def build_spell_list(reader):
 
@@ -251,8 +289,21 @@ class AllSpells:
                 self.all_spells = build_spell_list(csv.reader(file, delimiter=','))
 
     def find(self, regex: str) -> [SpellMeta]:
+        """
+        Find all spells with names matching the specified regular expression.
+        """
         pattern = re.compile(regex.lower().strip())
         return [spell for spell in self.all_spells if pattern.match(spell.name.lower())]
+
+    def find_first(self, regex: str) -> Optional[SpellMeta]:
+        """
+        Find the first spell with name mathing the specified regular expression (case insensitive), or None if no match
+        can be found.
+        """
+        result = sorted(self.find(regex))
+        if len(result) > 0:
+            return result[0]
+        return None
 
 
 class SpellBook:
@@ -271,6 +322,18 @@ class SpellBook:
         self.spells: Set[Spell] = set()
 
     def add_spells(self, caster_class, min_level=0, max_level=9):
+        """
+        Add spells from the all spells object to this spellbook. Spells are added with a specified casting class, and
+        allow duplicates if you have, say, the same spell available from two different class lists. The level of the
+        spell is determined by the casting class.
+
+        :param caster_class:
+            The caster class, specified as a member of the :class:`spells.CasterClass` enum.
+        :param min_level:
+        :param max_level:
+        :return:
+        """
+
         def f(spell_meta) -> Optional[Spell]:
             try:
                 spell = Spell.from_spell_meta(spell_meta, caster_class)
@@ -285,16 +348,48 @@ class SpellBook:
 
     @property
     def spell_names(self) -> [Spell]:
+        """
+        Property returning a list of all the spell names in this book, formatted as '$NAME ($CLASS $LEVEL)' for easy
+        display.
+        """
         return [f'{spell.name} ({spell.caster_class.full_name} {spell.level})' for spell in sorted(self.spells)]
 
-    def make_pdf(self, paper_size: Paper = Paper.A4, margin_mm=10, cells_horizontal=3,
-                 cells_vertical=3, spacing_mm=5):
-        cell_height_mm = (paper_size.height + spacing_mm - 2 * margin_mm) / float(cells_vertical) - spacing_mm
-        cell_width_mm = (paper_size.width + spacing_mm - 2 * margin_mm) / float(cells_horizontal) - spacing_mm
+    def make_pdf(self, pdf_filename='/home/tom/Desktop/spells.pdf', paper_size: Paper = Paper.A4, margin_mm=5,
+                 cells_horizontal=3, cells_vertical=3, spacing_mm=3, orientation='P'):
+        """
+        Build a PDF containing spell cards for all spells in this book.
 
-        pdf = FPDF(orientation='P', unit='mm', format=paper_size.dimensions)
+        :param pdf_filename:
+            Filename of the PDF to write at the end of the process.
+        :param paper_size:
+            Instance of the :class:`mapmaker.Paper` enum, defaults to A4.
+        :param margin_mm:
+            Margin around the entire page, nothing will be generated in this area. Defaults to 5mm.
+        :param cells_horizontal:
+            Number of cards per page horizontally. Defaults to 3.
+        :param cells_vertical:
+            Number of cards per page vertically. Defaults to 3.
+        :param spacing_mm:
+            Spacing in mm between cards within a layout. Defaults to 3mm.
+        :param orientation:
+            Orientation, 'L' for landscape, 'P' for portrait. Defaults to P.
+        """
+        paper_height_mm = paper_size.height
+        paper_width_mm = paper_size.width
+        if orientation == 'L':
+            paper_height_mm = paper_size.width
+            paper_width_mm = paper_size.height
+
+        # Compute the width and height of each card in mm
+        cell_height_mm = (paper_height_mm + spacing_mm - 2 * margin_mm) / float(cells_vertical) - spacing_mm
+        cell_width_mm = (paper_width_mm + spacing_mm - 2 * margin_mm) / float(cells_horizontal) - spacing_mm
+
+        # Build a PDF instance, add a unicode capable font as some descriptions appear to contain non-latin characters.
+        pdf = FPDF(orientation=orientation, unit='mm', format=paper_size.dimensions)
         pdf.add_font('DejaVu', '', '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf', uni=True)
 
+        # Disable auto-page-break as we're quite often adding text that overflows at the moment and we don't actually
+        # want to create new pages implicitly.
         pdf.set_auto_page_break(auto=False, margin=0.0)
 
         def get_location(i: int) -> Tuple[int, int, int, int, int]:
@@ -310,22 +405,30 @@ class SpellBook:
                     cell_height_mm + spacing_mm)
 
         for i, spell in enumerate(sorted(self.spells)):
+
             page, x, y, x_mm, y_mm = get_location(i)
+
             if x == 0 and y == 0:
                 # New page
                 pdf.add_page()
-            # Draw outline
+
+            # Draw card outline, filling based on school colour.
             pdf.set_fill_color(*spell.school.colour)
-            pdf.rect(x_mm, y_mm, cell_width_mm, cell_height_mm, style='F')
-            # Move cursor to top left of new card
-            pdf.x = x_mm
-            pdf.y = y_mm + 5
+            pdf.rect(x_mm, y_mm, cell_width_mm, cell_height_mm, style='FD')
+            pdf.image('/home/tom/Desktop/frame.png', x_mm, y_mm, cell_width_mm, cell_height_mm, 'png')
+            pdf.set_fill_color(255, 255, 255)
+            pdf.rect(x_mm+1, y_mm+1, cell_width_mm-2, 7, style='FD')
+
+            # Move cursor to top left of new card, and then down slightly as text renders with centre line on the
+            # PDF cursor for some reason. Write the title.
+            pdf.x = x_mm + 2
+            pdf.y = y_mm + 4.5
             pdf.set_font('DejaVu', '', 12)
-            pdf.cell(w=cell_width_mm, txt=f'{spell.name} ({spell.level})')
+            pdf.cell(w=cell_width_mm-4, txt=f'{spell.name} ({spell.level})')
+            # Set smaller font and write the description
             pdf.set_font('DejaVu', '', 7)
             pdf.x = x_mm
             pdf.y = y_mm + 10
             pdf.multi_cell(w=cell_width_mm, h=3, txt=spell.description, border=0, align='J', fill=False)
 
-
-        pdf.output('/home/tom/Desktop/test.pdf')
+        pdf.output(pdf_filename)
