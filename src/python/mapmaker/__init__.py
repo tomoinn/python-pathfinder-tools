@@ -232,8 +232,11 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border_nort
 
         def pages(size, printable_size, overlap):
             if math.ceil(size / printable_size) == 1:
-                return 1
-            return math.ceil(size / (printable_size + overlap))
+                number_pages = 1
+            else:
+                number_pages = math.ceil(size / (printable_size + overlap))
+            logging.debug(f'pages(size={size} printable_size={printable_size} overlap={overlap}) = {number_pages}')
+            return number_pages
 
         pages_horizontal_p = pages(width_mm, printable_width, overlap_east)
         pages_vertical_p = pages(height_mm, printable_height, overlap_south)
@@ -411,8 +414,11 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
                     logging.info(
                         'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
                                                                                                  height, filesize))
-                    image_number = int(entry.name[6:9])
-                    mask_name = f'image-{image_number + 1:03d}.png'
+                    image_number = int(entry.name[entry.name.find('-')+1:entry.name.find('.')])
+                    if image_number < 99:
+                        mask_name = f'image-{image_number + 1:03d}.png'
+                    else:
+                        mask_name = f'image-{image_number + 1}.png'
                     if isfile(dir + '/' + mask_name):
                         mask_im = Image.open(dir + '/' + mask_name)
                         mask_width, mask_height = mask_im.size
