@@ -37,15 +37,49 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
         # Skip the header row
         reader.__next__()
 
+        def deity(prerequisites) -> Optional[str]:
+            m = re.search(r'worshiper of (\w+)', prerequisites.lower())
+            if m is not None:
+                return m.group(1)
+            return None
+
         def find_attributes(prerequisites) -> {}:
+            """
+            Read in the prerequisites string, and construct a dict containing minimum attribute requirements
+            for each of the six basic attributes if we detect any of these. Always returns a dict containing
+            every single attribute, if no requirement is specified they're set to 0.
+
+            :param prerequisites:
+                String containing expressions like 'STR 18' (case insensitive). Also detects the longer form, i.e.
+                'Strength 18' as some of the source data includes these (probably wrong) specifications
+            :return:
+                Dict containing str, con, dex, wis, int, cha as keys and integer values representing the minimum
+                value for each attribute required to use the feat with the specified prerequisite string
+            """
             requirements = {'str': 0, 'dex': 0, 'con': 0, 'wis': 0, 'cha': 0, 'int': 0}
-            for attr in ['str', 'con', 'dex', 'wis', 'cha', 'int']:
-                m = re.search(attr + r' ?(\d+)', prerequisites.lower())
+            for attr in ['strength', 'constitution', 'dexterity', 'wisdom', 'charisma', 'intelligence']:
+                short_attr = attr[:3]
+                m = re.search(short_attr + r' ?(\d+)', prerequisites.lower())
                 if m is not None:
-                    requirements[attr] = int(m.group(1))
+                    requirements[short_attr] = int(m.group(1))
+                else:
+                    m = re.search(attr+r' ?(\d+)', prerequisites.lower())
+                    if m is not None:
+                        requirements[short_attr] = int(m.group(1))
             return requirements
 
         def level_requirements(prerequisites) -> {}:
+            """
+            Read in the prerequisites string and work out any requirements specified for BAB, and for levels in any of
+            the Fighter, Monk, and Brawler classes.
+
+            :param prerequisites:
+                String containing expressions like 'fighter level 12' or '12th-level fighter' for class levels, or 'base
+                attack bonus 5' for BAB (case insensitive)
+            :return:
+                Dict containing keys 'fighter', 'monk', 'brawler', 'bab' with values either None for no requirement
+                specified, or an int to indicate that at least that level or BAB is required for the feat to be usable.
+            """
             requirements = {}
 
             def find_requirement(requirement_name: str, requirement_regex: str):
@@ -59,9 +93,27 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
             find_requirement('fighter', r'fighter level (\d+)')
             find_requirement('monk', r'monk level (\d+)')
             find_requirement('brawler', r'brawler level (\d+)')
+
+            # check for alternative (wrong) form of level specification
+            if requirements['fighter'] is None:
+                m = re.search(r'(\d+)th-level fighter', prerequisites.lower())
+                if m is not None:
+                    requirements['fighter'] = int(m.group(1))
+            if requirements['monk'] is None:
+                m = re.search(r'(\d+)th-level monk', prerequisites.lower())
+                if m is not None:
+                    requirements['monk'] = int(m.group(1))
             return requirements
 
         def build_feat(row):
+            """
+            Build a Feat for a given CSV row
+
+            :param row:
+                The row extracted from the CSV file, represented as a tuple
+            :return:
+                A Feat for this row
+            """
             feat_id, name, feat_type, description, prerequisites, prerequisite_feats, benefit, normal, special, \
             source, fulltext, is_teamwork, critical, grit, style, performance, racial, companion_familiar, race_name, \
             note, goal, completion_benefit, multiples, suggested_traits, prerequisite_skills, panache, betrayal, \
@@ -72,7 +124,7 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
                         fulltext=benefit, prerequisites=prerequisites, prerequisite_feats=prerequisite_feats,
                         attribute_requirements=find_attributes(prerequisites),
                         level_requirements=level_requirements(prerequisites), is_teamwork=(int(is_teamwork) == 1),
-                        racial=int(racial) == 1, race_name=race_name)
+                        racial=int(racial) == 1, race_name=race_name, deity=deity(prerequisites))
 
         # Build a dict from compound name to Feat object for all feats other than mythic ones, PFS won't use them and
         # they just confuse the matching system
@@ -80,11 +132,24 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
             (feat.compound_name.lower(), feat) for feat in [build_feat(row) for row in reader if row[2] != 'Mythic'])
 
         def build_dummy_feat(id: int, name: str, description: str):
+            """
+            We need dummy feats for weapon and shield proficiencies so we can depend on them from other feats. This
+            function constructs such feats.
+
+            :param id:
+                ID to assign
+            :param name:
+                Name to use
+            :param description:
+                Description, also used for fulltext
+            :return:
+                The generated Feat
+            """
             return Feat(id=id, name=name, description=description, fulltext=description, prerequisites='',
                         prerequisite_feats='',
                         attribute_requirements={'str': 0, 'dex': 0, 'con': 0, 'wis': 0, 'cha': 0, 'int': 0},
                         level_requirements={'bab': None, 'monk': None, 'fighter': None, 'brawler': None},
-                        types=['combat'], is_teamwork=False, racial=False, race_name='')
+                        types=['combat'], is_teamwork=False, racial=False, race_name='', deity=None)
 
         # Add in dummy feats for dependencies on Weapon Proficiency and Shield Proficiency
         feats['weapon proficiency'] = build_dummy_feat(id=100001, name='Weapon Proficiency',
@@ -104,6 +169,11 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
                         required_feat = feats.get_feat(required_feat_raw.strip().lower())
                         feat.parents.append(required_feat)
                         required_feat.children.append(feat)
+
+        feats.root_feats = list([feat for feat_name, feat in feats.items() if len(feat.parents) == 0])
+
+        # Extra dependencies that aren't properly supplied in the source data
+        feats.get_feat('steady engagement').parents.append(feats.get_feat('stand still'))
 
         return feats
 
@@ -146,7 +216,8 @@ def traverse(selected_feats: ['Feat'], traverse_parents=False, traverse_children
 
 
 def can_flex(feat: 'Feat', known_feats: ['Feat'], bab=0, fighter_level=0, monk_level=0,
-             brawler_level=0, str_stat=0, con_stat=0, dex_stat=0, wis_stat=0, int_stat=0, cha_stat=0, race=None):
+             brawler_level=0, str_stat=0, con_stat=0, dex_stat=0, wis_stat=0, int_stat=0, cha_stat=0, race=None,
+             deity=None):
     """
     Return whether a feat is eligible for selection as a target for martial flexibility
 
@@ -176,6 +247,10 @@ def can_flex(feat: 'Feat', known_feats: ['Feat'], bab=0, fighter_level=0, monk_l
         treated as 13 due to brawler's cunning (defaults to 0)
     :param cha_stat:
         Charisma attribute (defaults to 0)
+    :param race:
+        If non-None, and the feat's race_name is also not None, fail if they don't match
+    :param deity:
+        If non-None, and the feat's deity is also non-None, fail if they don't match
     :return:
         True if the feat is eligible, false otherwise
     """
@@ -215,12 +290,17 @@ def can_flex(feat: 'Feat', known_feats: ['Feat'], bab=0, fighter_level=0, monk_l
             races = [x.strip() for x in feat.race_name.lower().split(',')]
             if race.lower() not in races:
                 return False
+    # If we defined a deity and the feat also specifies one, only pass if they match
+    if deity is not None:
+        if feat.deity is not None:
+            if deity.lower() != feat.deity.lower():
+                return False
     return True
 
 
 def martial_flex(feats: 'FeatDict', known_feats: ['Feat'], exclusions=None, bab=0, fighter_level=0, monk_level=0,
                  brawler_level=0, str_stat=0, con_stat=0, dex_stat=0, wis_stat=0, int_stat=0, cha_stat=0,
-                 include_no_deps=False, include_teamwork=False, race=None):
+                 include_no_deps=False, include_teamwork=False, race=None, deity=None):
     """
     Return a list of feats that aren't in the list of existing feats but for which we have all the prerequisite feats.
 
@@ -259,6 +339,8 @@ def martial_flex(feats: 'FeatDict', known_feats: ['Feat'], exclusions=None, bab=
         Set this to true to show teamwork feats, defaults to False
     :param race:
         Set this to non-null to include only racial abilities from the specified race
+    :param deity:
+        Set this to non-null to include only feats eligible for worshippers of the specific deity
     :return:
         An iterable of :class:`~pyfeats.Feat` to which we could potentially flex
     """
@@ -272,21 +354,41 @@ def martial_flex(feats: 'FeatDict', known_feats: ['Feat'], exclusions=None, bab=
             return False
         return can_flex(feat=feat, known_feats=known_feats, bab=bab, fighter_level=fighter_level, monk_level=monk_level,
                         brawler_level=brawler_level, str_stat=str_stat, con_stat=con_stat, dex_stat=dex_stat,
-                        wis_stat=wis_stat, int_stat=int_stat, cha_stat=cha_stat, race=race)
+                        wis_stat=wis_stat, int_stat=int_stat, cha_stat=cha_stat, race=race, deity=deity)
 
-    return [feat for feat_name, feat in feats.items() if valid_feat(feat)]
+    candidate_child_feats = set([val for sublist in [feat.children for feat in known_feats] for val in sublist])
+
+    if include_no_deps:
+        candidate_child_feats.update(feats.root_feats)
+
+    return [feat for feat in candidate_child_feats if valid_feat(feat)]
 
 
 class FeatDict(dict):
+    """
+    Subclass of dict which contains a dict of Feats along with methods to interrogate itself, searching for feats by
+    name, removing dependencies implied by transitivity etc.
+    """
 
     def __init__(self, internal_dict):
         super(FeatDict, self).__init__(internal_dict)
+        self.root_feats = []
 
     def find(self, regex: str) -> ['Feat']:
         pattern = re.compile(regex.lower().strip())
         return list(self[key] for key in self if pattern.match(key))
 
     def graph(self, regex: str, children=True) -> Dot:
+        """
+        Produce a Dot format graph object which can be used to render all feats matching the specified name regex.
+
+        :param regex:
+            Regex to specify feats
+        :param children:
+            Set to true to show feats which depend on the selected feats, false to only show their dependencies.
+        :return:
+            A graph object that can be rendered by the dot tool from graphviz
+        """
         g = Dot(rankdir='LR', ranksep=0.8, nodesep=0.2, splines='false')
         g.set_node_defaults(fontname='font-awesome', fontsize=12, style='rounded, filled', fillcolor='azure2',
                             color='none')
@@ -299,7 +401,9 @@ class FeatDict(dict):
 
     @staticmethod
     def simplify(selected_feats: ['Feat']) -> ['Feat']:
-        # Given a set of feats, remove dependencies implied by transitivity
+        """
+        Given a set of feats, remove dependencies implied by transitivity
+        """
         finished = False
         while not finished:
             finished = True
@@ -314,7 +418,19 @@ class FeatDict(dict):
         return selected_feats
 
     def get_feat(self, feat_name: str) -> 'Feat':
-        # Handle oddities like spell and skill focus
+        """
+        Retrieve a feat with a given name. This fixes various aliases / miss-spellings in the source data, as well as
+        those which are specialised e.g. weapon focus (longsword) will map to weapon focus. We use this because we have
+        no support for specialisation of feats in this way - this produces some false positives in terms of traversal
+        as we can't express that a particular feat requires e.g. weapon focus (spear) rather than any weapon focus, but
+        it also avoids the problem that were we to make every possible combination available we'd have a stupidly large
+        and unmanageable graph for those feats.
+
+        :param feat_name:
+            Input feat name
+        :return:
+            Feat matching the name, after any adjustments have been applied
+        """
         if re.match('spell focus*', feat_name.lower()):
             return self['spell focus']
         elif re.match('skill focus*', feat_name.lower()):
@@ -395,6 +511,7 @@ class Feat:
     is_teamwork: bool
     racial: bool
     race_name: str
+    deity: Optional[str]
 
     @property
     def compound_name(self) -> str:
@@ -440,14 +557,64 @@ class Feat:
         lines = textwrap.wrap(self.fulltext, width - len(indent))
         return newline.join([f'{indent}{line}' for line in lines])
 
+    def __hash__(self):
+        return self.name.__hash__()
+
+    def __lt__(self, other):
+        return self.name.__lt__(other.name)
+
+    def __le__(self, other):
+        return self.name.__le__(other.name)
+
+    def __gt__(self, other):
+        return self.name.__gt__(other.name)
+
+    def __ge__(self, other):
+        return self.name.__ge__(other.name)
+
 
 class MartialFlex:
     """
-    Represents the ability to flex to combat feats on the fly
+    Represents the ability to flex to combat feats on the fly. On construction you provide a FeatDict to retrieve all
+    known feats, the names of feats the character already knows, the character's Base Attack Bonus and any levels in
+    Fighter, Monk, or Brawler the character has along with the character's stat block and, optionally, race. The class
+    then allows you to search for feats which are candidates for the martial flex ability, including those cases where
+    the character can flex to multiple feats where one of the new feats is a prerequisite of one of the others.
     """
 
     def __init__(self, feats, known_feat_names, bab=0, fighter_level=0, monk_level=0,
-                 brawler_level=0, str_stat=0, con_stat=0, dex_stat=0, wis_stat=0, int_stat=0, cha_stat=0, race=None):
+                 brawler_level=0, str_stat=0, con_stat=0, dex_stat=0, wis_stat=0, int_stat=0, cha_stat=0, race=None,
+                 deity=None):
+        """
+        :param feats:
+            a FeatDict containing all known feats
+        :param known_feat_names:
+            Array of names of feats the character already knows
+        :param bab:
+            BAB, 0 if not specified
+        :param fighter_level:
+            Number of levels in Fighter, 0 if not specified
+        :param monk_level:
+            Number of levels in Monk, 0 if not specified
+        :param brawler_level:
+            Number of levels in Brawler, 0 if not specified
+        :param str_stat:
+            STR, 0 if not specified
+        :param con_stat:
+            CON, 0 if not specified
+        :param dex_stat:
+            DEX, 0 if not specified
+        :param wis_stat:
+            WIS, 0 if not specified
+        :param int_stat:
+            INT, 0 if not specified
+        :param cha_stat:
+            CHA, 0 if not specified
+        :param race:
+            Race, i.e. 'human', if you don't want to filter on race just don't specify
+        :param deity:
+            Worshiped deity, or defaults to None to not specify
+        """
         self.feats = feats
         self.known_feats = self.feats.find('|'.join([f'{name}$' for name in known_feat_names]))
         self.bab = bab
@@ -461,6 +628,7 @@ class MartialFlex:
         self.int_stat = int_stat
         self.cha_stat = cha_stat
         self.race = race
+        self.deity = deity
 
     def get_flex_feats(self, known_feats, exclusions=None, include_no_deps=False, include_teamwork=False):
         return list(martial_flex(feats=self.feats, known_feats=known_feats, exclusions=exclusions, bab=self.bab,
@@ -468,7 +636,7 @@ class MartialFlex:
                                  brawler_level=self.brawler_level, include_no_deps=include_no_deps,
                                  include_teamwork=include_teamwork, str_stat=self.str_stat, con_stat=self.con_stat,
                                  dex_stat=self.dex_stat, wis_stat=self.wis_stat, int_stat=self.int_stat,
-                                 cha_stat=self.cha_stat, race=self.race))
+                                 cha_stat=self.cha_stat, race=self.race, deity=self.deity))
 
     def get_flex_tree(self, include_no_deps=False, include_teamwork=False, depth=1):
         root_nodes = [MartialFlex.FlexFeat(feat=feat, parent=None, children=None) for feat in self.get_flex_feats(
@@ -491,12 +659,12 @@ class MartialFlex:
 
         for _ in range(depth - 1):
             for flex_node in edge_nodes():
-                exclusions = self.get_flex_feats(self.known_feats + flex_node.parents, include_no_deps=include_no_deps,
+                exclusions = self.get_flex_feats(self.known_feats + flex_node.parents, include_no_deps=False,
                                                  include_teamwork=include_teamwork)
                 flex_node.children = [MartialFlex.FlexFeat(feat=flex_feat, parent=flex_node, children=None) for
                                       flex_feat in
                                       self.get_flex_feats(self.known_feats + [flex_node.feat],
-                                                          include_no_deps=include_no_deps,
+                                                          include_no_deps=False,
                                                           include_teamwork=include_teamwork,
                                                           exclusions=exclusions,
                                                           )]
@@ -504,12 +672,27 @@ class MartialFlex:
 
     @dataclass
     class FlexFeat:
+        """
+        A class wrapping a Feat along with the parent FlexFeat and any children. Parents and children for this class are
+        not the same as for the underlying Feat - here they represent the chain of martial flexes that led to this feat
+        being available. So for the first flex, there's no parent. Any children of that node represent new options that
+        weren't available before if we first flex to that node, and only apply when you have the option to perform more
+        than a single flex.
+
+        Total order over feat name.
+        """
         feat: Feat
         parent: Optional['MartialFlex.FlexFeat']
         children: ['MartialFlex.FlexFeat'] = None
 
         @property
         def parents(self):
+            """
+            Array of FlexFeat to which the character had previously flexed to allow this FlexFeat to become an option.
+
+            :return:
+                Array of FlexFeat - if there are no parents this is an empty array rather than None
+            """
             if self.parent is None:
                 return []
             else:
@@ -517,6 +700,12 @@ class MartialFlex:
 
         @property
         def text(self):
+            """
+            Formats the name, prerequisites, and description of the feat and any of its children
+
+            :return:
+                A rendered string for this feat and any of its flex children
+            """
             return self._inner_text()
 
         def __lt__(self, other):
@@ -538,7 +727,8 @@ class MartialFlex:
                 if feat.prerequisites is '':
                     lines = f'{feat.name}\n{feat.wrapped_fulltext()}'.split('\n')
                 else:
-                    lines = f'{feat.name} : requires {feat.prerequisites}\n{feat.wrapped_fulltext()}'.split('\n')
+                    lines = f'{feat.name} <- {requirement_names} : requires {feat.prerequisites}\n{feat.wrapped_fulltext()}'.split(
+                        '\n')
 
                 indent_string = '\t' * indent
                 return '\n'.join([f'{indent_string}{line}' for line in lines]) + '\n'
