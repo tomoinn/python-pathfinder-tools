@@ -63,7 +63,7 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
                 if m is not None:
                     requirements[short_attr] = int(m.group(1))
                 else:
-                    m = re.search(attr+r' ?(\d+)', prerequisites.lower())
+                    m = re.search(attr + r' ?(\d+)', prerequisites.lower())
                     if m is not None:
                         requirements[short_attr] = int(m.group(1))
             return requirements
@@ -105,6 +105,13 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
                     requirements['monk'] = int(m.group(1))
             return requirements
 
+        def fix_name(name):
+            if name == 'Tandemevasion':
+                return 'Tandem Evasion'
+            elif name == 'Leapf Rog':
+                return 'Leap Frog'
+            return name
+
         def build_feat(row):
             """
             Build a Feat for a given CSV row
@@ -120,7 +127,7 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
             targeting, esoteric, stare, weapon_mastery, item_mastery, armor_mastery, shield_mastery, blood_hex, trick \
                 = row
             # Extract all the fields in case we need them at some point
-            return Feat(id=feat_id, name=name, types=feat_type.lower().split(','), description=description,
+            return Feat(id=feat_id, name=fix_name(name), types=feat_type.lower().split(','), description=description,
                         fulltext=benefit, prerequisites=prerequisites, prerequisite_feats=prerequisite_feats,
                         attribute_requirements=find_attributes(prerequisites),
                         level_requirements=level_requirements(prerequisites), is_teamwork=(int(is_teamwork) == 1),
@@ -145,7 +152,7 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
             :return:
                 The generated Feat
             """
-            return Feat(id=id, name=name, description=description, fulltext=description, prerequisites='',
+            return Feat(id=id, name=fix_name(name), description=description, fulltext=description, prerequisites='',
                         prerequisite_feats='',
                         attribute_requirements={'str': 0, 'dex': 0, 'con': 0, 'wis': 0, 'cha': 0, 'int': 0},
                         level_requirements={'bab': None, 'monk': None, 'fighter': None, 'brawler': None},
@@ -173,7 +180,17 @@ def read_feat_csv(csv_url: str = DEFAULT_FEAT_URL, cache_feats=True) -> 'FeatDic
         feats.root_feats = list([feat for feat_name, feat in feats.items() if len(feat.parents) == 0])
 
         # Extra dependencies that aren't properly supplied in the source data
-        feats.get_feat('steady engagement').parents.append(feats.get_feat('stand still'))
+        def add_dependencies(dependent_feat_name, *dependency_names):
+            target_feat = feats.get_feat(dependent_feat_name)
+            target_feat.parents.extend([feats.get_feat(dependency_name) for dependency_name in dependency_names])
+
+        add_dependencies('steady engagement', 'stand still')
+        add_dependencies('witchbreaker', 'iron will')
+        add_dependencies('two-weapon grace', 'two-weapon fighting', 'weapon finesse')
+        add_dependencies('tandem evasion', 'dodge')
+        add_dependencies('spear dancer', 'weapon focus')
+        add_dependencies('masterful display', 'dazzling display')
+        add_dependencies('gravitational vital strike', 'vital strike')
 
         return feats
 
@@ -477,6 +494,8 @@ class FeatDict(dict):
             return self['acrobatic']
         elif feat_name == 'mproved grapple':
             return self['improved grapple']
+        elif feat_name == 'tandemevasion':
+            return self['tandem evasion']
         return self[feat_name]
 
 
@@ -724,10 +743,13 @@ class MartialFlex:
 
             def _feat_text(feat, indent=0):
                 requirement_names = list(requirement.name for requirement in feat.ancestors)
+                name = feat.name
+                if feat.teamwork:
+                    name = f'{name} (t)'
                 if feat.prerequisites is '':
-                    lines = f'{feat.name}\n{feat.wrapped_fulltext()}'.split('\n')
+                    lines = f'{name}\n{feat.wrapped_fulltext()}'.split('\n')
                 else:
-                    lines = f'{feat.name} <- {requirement_names} : requires {feat.prerequisites}\n{feat.wrapped_fulltext()}'.split(
+                    lines = f'{name} <- {requirement_names} : requires {feat.prerequisites}\n{feat.wrapped_fulltext()}'.split(
                         '\n')
 
                 indent_string = '\t' * indent
