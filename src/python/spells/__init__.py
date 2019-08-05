@@ -417,14 +417,14 @@ class SpellBook:
             pdf.rect(x_mm, y_mm, cell_width_mm, cell_height_mm, style='FD')
             pdf.image('/home/tom/Desktop/frame.png', x_mm, y_mm, cell_width_mm, cell_height_mm, 'png')
             pdf.set_fill_color(255, 255, 255)
-            pdf.rect(x_mm+1, y_mm+1, cell_width_mm-2, 7, style='FD')
+            pdf.rect(x_mm + 1, y_mm + 1, cell_width_mm - 2, 7, style='FD')
 
             # Move cursor to top left of new card, and then down slightly as text renders with centre line on the
             # PDF cursor for some reason. Write the title.
             pdf.x = x_mm + 2
             pdf.y = y_mm + 4.5
             pdf.set_font('DejaVu', '', 12)
-            pdf.cell(w=cell_width_mm-4, txt=f'{spell.name} ({spell.level})')
+            pdf.cell(w=cell_width_mm - 4, txt=f'{spell.name} ({spell.level})')
             # Set smaller font and write the description
             pdf.set_font('DejaVu', '', 7)
             pdf.x = x_mm

@@ -11,7 +11,6 @@ from pathlib import Path
 
 from PIL import Image, ImageEnhance
 from fpdf import FPDF
-from skimage.restoration import denoise_tv_chambolle as denoise
 
 TORCH_PATH = None
 WAIFU2X_LUA_PATH = None
@@ -414,7 +413,7 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
                     logging.info(
                         'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
                                                                                                  height, filesize))
-                    image_number = int(entry.name[entry.name.find('-')+1:entry.name.find('.')])
+                    image_number = int(entry.name[entry.name.find('-') + 1:entry.name.find('.')])
                     if image_number < 99:
                         mask_name = f'image-{image_number + 1:03d}.png'
                     else:
@@ -430,10 +429,6 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
                             subprocess.run(mask_command, shell=False, check=True, capture_output=True)
                             im = Image.open(dir + '/' + entry.name)
                     yield im
-
-
-def total_variation_denoise(image: Image, weight: int = 10) -> Image:
-    return denoise(image, weight=weight, multichannel=True)
 
 
 def run_waifu2x(image: Image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path=None, scale=True, noise=0,
