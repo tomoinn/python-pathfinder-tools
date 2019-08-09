@@ -718,6 +718,10 @@ class MartialFlex:
                 return [self.parent] + self.parent.parents
 
         @property
+        def markdown(self):
+            return self._inner_markdown()
+
+        @property
         def text(self):
             """
             Formats the name, prerequisites, and description of the feat and any of its children
@@ -760,3 +764,28 @@ class MartialFlex:
             else:
                 return _feat_text(self.feat, indent) + '\n' + '\n'.join(
                     [child._inner_text(indent=indent + 1) for child in sorted(self.children)])
+
+        def _inner_markdown(self, indent=0):
+
+            def _feat_text(feat, indent=0):
+                requirement_names = list(requirement.name for requirement in feat.ancestors)
+                name = feat.name
+                if feat.teamwork:
+                    name = f'{name} (t)'
+                if feat.prerequisites is '':
+                    lines = f'**{name}**\n\n*{feat.fulltext}*'.split('\n')
+                else:
+                    lines = f'**{name}**: requires {feat.prerequisites}\n\n*{feat.fulltext}*'.split(
+                        '\n')
+
+                indent_string = '  ' * indent
+                text = '\n'.join([f'{indent_string}{line}' for line in lines]) + '\n'
+                if indent > 0:
+                    text = '+'+text[(2*indent)-1:]
+                return text
+
+            if self.children is None or len(self.children) == 0:
+                return _feat_text(self.feat, indent)
+            else:
+                return _feat_text(self.feat, indent) + '\n' + '\n'.join(
+                    [child._inner_markdown(indent=indent + 1) for child in sorted(self.children)])
