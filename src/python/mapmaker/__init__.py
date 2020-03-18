@@ -432,7 +432,7 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
 
 
 def run_waifu2x(image: Image, waifu2x_lua_path=None, torch_path=None, waifu2x_macos_path=None, scale=True, noise=0,
-                force_cudnn=True) -> Image:
+                force_cudnn=False) -> Image:
     """
     Call an existing instance of the waifu2x tool. Requires that this tool is properly installed along with torch,
     CUDA etc. Creates a temporary directory, writes the image file to it, runs waifu2x then reads back the result and
