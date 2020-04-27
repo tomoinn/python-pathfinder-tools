@@ -21,7 +21,6 @@ setup(
     entry_points={
         'console_scripts': ['pfs_extract=pathfinder.mapmaker.extract:main',
                             'pfs_build_maps=pathfinder.mapmaker.build_maps:main',
-                            'pfs_web=pathfinder.pfsweb:main',
                             'pfs_sheets=pathfinder.chronicle.generate_sheets:main']
     },
     zip_safe=False)

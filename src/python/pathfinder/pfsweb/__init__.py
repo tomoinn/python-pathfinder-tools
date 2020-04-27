@@ -1,5 +1,5 @@
 from flask import Flask
-from pathfinder.pfsweb import Config
+from pathfinder.pfsweb.config import Config
 from flask_bootstrap import Bootstrap, WebCDN
 import os
 
