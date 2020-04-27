@@ -10,7 +10,7 @@ from urllib.request import urlretrieve
 import requests
 from fpdf import FPDF
 
-from mapmaker import Paper
+from pathfinder.mapmaker import Paper
 
 DEFAULT_SPELL_URL = \
     'https://docs.google.com/spreadsheets/d/1cuwb3QSvWDD7GG5McdvyyRBpqycYuKMRsXgyrvxvLFI/export?format=csv'

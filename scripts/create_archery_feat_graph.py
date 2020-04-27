@@ -1,5 +1,5 @@
 # run with e.g. python test.py | dot -Tpng | display to show the result
-import pyfeats
+from pathfinder import pyfeats
 
 feats = pyfeats.read_feat_csv()
 

@@ -7,6 +7,12 @@ dependencies. Tested on linux and MacOS.
 
 Requires Python3.7 upwards.
 
+## chronicle
+
+Utilities to extract and populate chronicle sheets from PFS scenario PDFs,
+as our group has had to move to online games with the virus outbreak and
+we still need a way to distribute chronicle sheets to players afterwards.
+
 ## pydice
 
 Library to model dice distributions, including an object

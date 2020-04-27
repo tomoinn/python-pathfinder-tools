@@ -1,4 +1,4 @@
-from pyfeats import MartialFlex, read_feat_csv
+from pathfinder.pyfeats import MartialFlex, read_feat_csv
 
 # Feats known by my Fighter / Occultist, Jakob
 feats_jakob = ['combat expertise', 'outflank', 'following step',

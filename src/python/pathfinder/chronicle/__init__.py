@@ -1,10 +1,48 @@
 from PyPDF2 import PdfFileReader, PdfFileWriter
-from chronicle.pdf import TransparentPDF
-from chronicle.cells import get_cells_for_season
+from pathfinder.chronicle.pdf import TransparentPDF
+from pathfinder.chronicle.cells import get_cells_for_season
 from io import BytesIO
 import types
 from datetime import date
 import re
+import csv
+import requests
+from dataclasses import dataclass
+
+
+@dataclass
+class PlayerDetails:
+    """
+    Holds columns from the reporting sheet CSV, columns must be in the order declared here or nothing will work!
+    """
+    player_name: str
+    pfs_number: int
+    character_number: int
+    character_name: str
+    faction: str
+    slow: bool
+    tier: int
+    dayjob_roll: int
+    prestige: int
+    xp: int
+    gold: int
+    notes: str
+    date: str
+    event_name: str
+    event_code: str
+    gm_number: str
+
+
+def parse_reporting_sheet(sheet_export_url):
+    """
+    Build a list of PlayerDetails objects from the specified sheet URL. This URL must point to the exportable CSV of
+    the export sheet within the reporting doc.
+    """
+    response = requests.get(sheet_export_url)
+    reader = csv.reader(response.content.decode('utf-8').splitlines(), delimiter=',')
+    # Skip header row
+    reader.__next__()
+    return list([PlayerDetails(*row) for row in reader])
 
 
 class ChronicleSheet:
@@ -176,7 +214,7 @@ def player(player_name, character_name, player_number, character_number, faction
     return annotate
 
 
-def xp(starting_xp, xp_gained):
+def xp(xp_gained, starting_xp=None, ):
     """
     Fill in the XP section
 
@@ -187,7 +225,10 @@ def xp(starting_xp, xp_gained):
     """
 
     def annotate(sheet: ChronicleSheet):
-        sheet.texts(starting_xp=starting_xp, xp_gained=xp_gained, final_xp=starting_xp + xp_gained)
+        if starting_xp is not None:
+            sheet.texts(starting_xp=starting_xp, xp_gained=xp_gained, final_xp=starting_xp + xp_gained)
+        else:
+            sheet.texts(xp_gained=xp_gained)
 
     return annotate
 
@@ -214,7 +255,50 @@ def gm(signature_filename: str, initials_filename: str, gm_number: int):
     return annotate
 
 
-def gold(starting_gp: int, gp_gained: int, day_job=0, gp_spent=0, items_sold=0):
+def gold_and_day_job(gp_gained: int, roll: str):
+    """
+    Fill in day job from roll, and gold gained, ignoring everything else
+    :param gp_gained:
+        Sets the value of the gp_gained box
+    :param roll:
+        if an int, interpreted as a D20 day-job check. If None, strike out the day job box, otherwise enter
+        this value directly into the box
+    :return:
+    """
+
+    def gold_for_day_job(r: int):
+        if r <= 5:
+            return 1
+        if r <= 10:
+            return 5
+        if r <= 15:
+            return 10
+        if r <= 20:
+            return 20
+        if r <= 25:
+            return 50
+        if r <= 30:
+            return 75
+        if r <= 35:
+            return 100
+        if r <= 40:
+            return 150
+
+    def annotate(sheet: ChronicleSheet):
+        sheet.texts(gp_gained=gp_gained)
+        if roll is not None:
+            try:
+                roll_int = int(roll)
+                sheet.texts(day_job=gold_for_day_job(roll_int))
+            except ValueError:
+                sheet.texts(day_job=roll)
+        else:
+            sheet.strike_out('day_job')
+
+    return annotate
+
+
+def gold(gp_gained: int, starting_gp=None, day_job=0, gp_spent=0, items_sold=0):
     """
     Fill in the GP section
 
@@ -277,7 +361,7 @@ def event(event_name, event_code: int, game_date=None):
     return annotate
 
 
-def prestige(initial_prestige, initial_fame, prestige_gained, prestige_spent=0):
+def prestige(prestige_gained, initial_prestige=None, initial_fame=None, prestige_spent=0):
     """
     Show prestige
 
@@ -292,15 +376,18 @@ def prestige(initial_prestige, initial_fame, prestige_gained, prestige_spent=0):
     """
 
     def annotate(sheet: ChronicleSheet):
-        sheet.texts(initial_prestige=initial_prestige,
-                    initial_fame=initial_fame,
-                    prestige_gained=prestige_gained,
-                    current_fame=initial_fame + prestige_gained,
-                    current_prestige=initial_prestige + prestige_gained - prestige_spent)
-        if prestige_spent is not 0:
-            sheet.texts(prestige_spent=prestige_spent)
-        else:
-            sheet.strike_out('prestige_spent')
+        if initial_prestige is not None:
+            sheet.texts(initial_prestige=initial_prestige,
+                        initial_fame=initial_fame,
+                        prestige_gained=prestige_gained,
+                        current_fame=initial_fame + prestige_gained,
+                        current_prestige=initial_prestige + prestige_gained - prestige_spent)
+            if prestige_spent is not 0:
+                sheet.texts(prestige_spent=prestige_spent)
+            else:
+                sheet.strike_out('prestige_spent')
+        elif prestige_gained is not None:
+            sheet.texts(prestige_gained=prestige_gained)
 
     return annotate
 
@@ -322,6 +409,7 @@ def annotate_chronicle_sheet(input_filename: str, output_filename: str, season: 
         page = input.getPage(page_number - 1)
         # Try to find the scenario number, and therefore the season to use
         if season is 0:
+            print(input.getDocumentInfo())
             title = input.getDocumentInfo()['/Title']
             m = re.search(r'(\d\d)(\d\d)', title)
             if m:
@@ -344,7 +432,8 @@ def annotate_chronicle_sheet(input_filename: str, output_filename: str, season: 
             annotation_function(sheet)
         # Merge from the overlay onto the original page
         with BytesIO(overlay_pdf.output(dest='S').encode('latin-1')) as stream:
-            overlay_pdf2 = PdfFileReader(stream)
+
+            overlay_pdf2 = PdfFileReader(stream, strict=False)
             merge = overlay_pdf2.getPage(0)
             page.mergePage(merge)
             # Write the output PDF

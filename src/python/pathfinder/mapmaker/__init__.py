@@ -45,20 +45,21 @@ def parse_filename(filename):
         raise ValueError('Filename not of the form name_WxH.png, was {}'.format(leaf_name))
 
 
+@dataclass
+class PaperSize:
+    """
+    Defines a paper size
+    """
+    width: int
+    height: int
+    name: str
+
+
 class Paper(Enum):
     """
     Common paper sizes, used by the split_image and make_pdf functions to determine how images should be tiled across
     the available paper space.
     """
-
-    @dataclass
-    class PaperSize:
-        """
-        Defines a paper size
-        """
-        width: int
-        height: int
-        name: str
 
     A4 = PaperSize(height=297, width=210, name='A4')
     A3 = PaperSize(height=420, width=297, name='A3')
@@ -82,6 +83,31 @@ class Paper(Enum):
     def name(self):
         return self.value.name
 
+def basic_image_ops(image, brighten=1.0, sharpen=None, saturation=None):
+    """
+    Perform basic brighten, sharpen, colour operations on an image
+
+    :param image:
+        Image to process
+    :param brighten:
+        Change in brightness, defaults to 1.0 for no change
+    :param sharpen:
+        Sharpen, defaults to None for no operation
+    :param saturation:
+        Saturation, defaults to None for no operation
+    :return:
+        The modified image
+    """
+    if brighten is not None and brighten is not 1.0:
+        logging.info('Applying brighten {}'.format(brighten))
+        image = ImageEnhance.Brightness(image).enhance(brighten)
+    if sharpen is not None:
+        logging.info('Applying sharpen {}'.format(sharpen))
+        image = ImageEnhance.Sharpness(image).enhance(sharpen)
+    if saturation is not None:
+        logging.info('Applying saturation {}'.format(saturation))
+        image = ImageEnhance.Color(image).enhance(saturation)
+    return image
 
 def process_image_with_border(im: Image, squares_wide: float, squares_high: float, border_north=5, border_east=5,
                               border_west=5, border_south=5, brighten=None, sharpen=None, saturation=None):
@@ -120,15 +146,7 @@ def process_image_with_border(im: Image, squares_wide: float, squares_high: floa
     pixels_per_mm = min(width_pixels / (squares_wide * 25.4), height_pixels / (squares_high * 25.4))
     logging.info('process_image_with_border: Calculated {} pixels per mm'.format(pixels_per_mm))
     # Apply enhancements if required
-    if brighten is not None:
-        logging.info('process_image_with_border: Applying brighten {}'.format(brighten))
-        im = ImageEnhance.Brightness(im).enhance(brighten)
-    if sharpen is not None:
-        logging.info('process_image_with_border: Applying sharpen {}'.format(sharpen))
-        im = ImageEnhance.Sharpness(im).enhance(sharpen)
-    if saturation is not None:
-        logging.info('process_image_with_border: Applying saturation {}'.format(saturation))
-        im = ImageEnhance.Color(im).enhance(saturation)
+    im = basic_image_ops(im, brighten, sharpen, saturation)
     image_width_mm = width_pixels / pixels_per_mm
     image_height_mm = height_pixels / pixels_per_mm
 
@@ -211,15 +229,8 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border_nort
     logging.info('split_image: Calculated {} pixels per mm'.format(pixels_per_mm))
 
     # Apply enhancements if required
-    if brighten is not None:
-        logging.info('split_image: Applying brighten {}'.format(brighten))
-        im = ImageEnhance.Brightness(im).enhance(brighten)
-    if sharpen is not None:
-        logging.info('split_image: Applying sharpen {}'.format(sharpen))
-        im = ImageEnhance.Sharpness(im).enhance(sharpen)
-    if saturation is not None:
-        logging.info('split_image: Applying saturation {}'.format(saturation))
-        im = ImageEnhance.Color(im).enhance(saturation)
+    im = basic_image_ops(im, brighten, sharpen, saturation)
+
 
     width_mm = width_pixels / pixels_per_mm
     height_mm = height_pixels / pixels_per_mm

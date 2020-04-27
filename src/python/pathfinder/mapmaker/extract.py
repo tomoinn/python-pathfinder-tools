@@ -4,7 +4,7 @@ from os import makedirs
 from os.path import abspath
 from pathlib import Path
 
-from mapmaker import extract_images_from_pdf
+from pathfinder.mapmaker import extract_images_from_pdf
 
 logging.basicConfig(level=logging.INFO)
 

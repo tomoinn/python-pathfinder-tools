@@ -1,6 +1,6 @@
 # Dict of cell name to (x, y, width, height, centred?) for seasons 3, 4
 def get_cells_for_season(season: int):
-    if season in [7, 8, 9, 10]:
+    if season in [5, 7, 8, 9, 10]:
         return cells_season_9
     if season in [3, 4]:
         return cells_season_3

@@ -1,4 +1,4 @@
-from pydice import D
+from pathfinder.pydice import D
 
 
 def weapon_damage(hit_on: int, damage: D, critical_damage: D, critical=20) -> D:

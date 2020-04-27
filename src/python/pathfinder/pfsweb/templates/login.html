@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}This is an example page{% endblock %}
+
+{% block content %}
+    <form class="form form-inline" method="post" role="form">
+        {% for player in range(6) %}
+            {{ wtf.form_field(form.players[player].player_name) }}
+        {% endfor %}
+    </form>
+{% endblock %}
