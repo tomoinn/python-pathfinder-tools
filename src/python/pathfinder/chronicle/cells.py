@@ -1,5 +1,9 @@
 # Dict of cell name to (x, y, width, height, centred?) for seasons 3, 4
 def get_cells_for_season(season: int):
+    if season in [11]:
+        # Not really season 11, but some season 10 scenarios have five tiers for
+        # some reason, so we need a way to express that
+        return cells_season_11
     if season in [5, 7, 8, 9, 10]:
         return cells_season_9
     if season in [3, 4]:
@@ -89,6 +93,50 @@ cells_season_9 = {
     'note_top': (13.5, 59.5, 148, 5, False),
     'note_bottom': (13, 264, 187.5, 7, False)
 }
+
+cells_season_11 = {
+    'event': (15, 252, 36, 7, False),
+    'event_code': (55, 252, 20, 7, False),
+    'date': (80, 252, 27, 7, False),
+    'gm_sig': (112, 252, 46, 7, False),
+    'gm_number': (162, 252, 37, 7, True),
+    'player_name': (15, 39.5, 29, 7, False),
+    'character_name': (54.5, 39.5, 36.5, 7, False),
+    'player_number': (95, 39.5, 24, 7, True),
+    'character_number': (122.5, 39.5, 15.5, 7, True),
+    'character_faction': (142, 39.5, 16, 7, True),
+    'subtier_1_slow': (176.5, 23.5, 11.5, 9, True),
+    'subtier_1_fast': (188.5, 23.5, 11.5, 9, True),
+    'subtier_2_slow': (176.5, 38.5, 11.5, 9, True),
+    'subtier_2_fast': (188.5, 38.5, 11.5, 9, True),
+    'subtier_3_slow': (176.5, 53.5, 11.5, 9, True),
+    'subtier_3_fast': (188.5, 53.5, 11.5, 9, True),
+    'subtier_4_slow': (176.5, 69, 11.5, 9, True),
+    'subtier_4_fast': (188.5, 69, 11.5, 9, True),
+    'subtier_5_slow': (176.5, 84, 11.5, 9, True),
+    'subtier_5_fast': (188.5, 84, 11.5, 9, True),
+    'starting_xp': (167, 94, 33, 7, True),
+    'xp_gained': (167, 106.5, 22, 7, True),
+    'xp_gained_initials': (189.5, 106.5, 11, 7, True),
+    'final_xp': (167, 118.7, 33, 7, True),
+    'initial_prestige': (167, 132.5, 16, 7, True),
+    'initial_fame': (183.5, 132.5, 16, 7, True),
+    'prestige_gained': (167, 144.5, 22, 7, True),
+    'prestige_gained_initials': (189.5, 144.5, 11, 7, True),
+    'prestige_spent': (167, 156.5, 33, 7, True),
+    'current_prestige': (167, 169, 16, 7, True),
+    'current_fame': (183.5, 169, 16, 7, True),
+    'starting_gp': (167, 183.5, 33, 7, True),
+    'gp_gained': (167, 196.5, 22, 7, True),
+    'gp_gained_initials': (189.5, 196.5, 11, 7, True),
+    'day_job': (167, 208.5, 22, 7, True),
+    'day_job_initials': (189.5, 208.5, 11, 7, True),
+    'gp_spent': (167, 221, 33, 7, True),
+    'gp_total': (167, 233.5, 33, 7, True),
+    'note_top': (13.5, 59.5, 148, 5, False),
+    'note_bottom': (13, 264, 187.5, 7, False)
+}
+
 
 cells_season_6 = {
     'event': (15, 261, 36, 7, False),

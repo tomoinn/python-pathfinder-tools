@@ -392,6 +392,23 @@ def prestige(prestige_gained, initial_prestige=None, initial_fame=None, prestige
     return annotate
 
 
+def chronicle_info(input_filename: str):
+    with open(input_filename, mode='rb') as input_file:
+        input_pdf = PdfFileReader(input_file)
+        # Work around a library bug, sometimes it thinks things are encrypted when they're not
+        if input_pdf.isEncrypted:
+            input_pdf.decrypt('')
+        # Try to find the scenario number, and therefore the season to use
+        print(input_pdf.getDocumentInfo())
+        title = input_pdf.getDocumentInfo()['/Title']
+        m = re.search(r'(\d\d)(\d\d)', title)
+        if m:
+            season = int(m.groups()[0])
+            scenario = int(m.groups()[1])
+            return title, season, scenario
+        return title, '?', '?'
+
+
 def annotate_chronicle_sheet(input_filename: str, output_filename: str, season: int = 0, page_number: int = 0,
                              annotation_functions=None):
     # Scale points to mm by multiplying by..
