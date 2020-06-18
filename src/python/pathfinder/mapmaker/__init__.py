@@ -11,10 +11,99 @@ from pathlib import Path
 
 from PIL import Image, ImageEnhance
 from fpdf import FPDF
+from guizero import App, Picture
 
 TORCH_PATH = None
 WAIFU2X_LUA_PATH = None
 WAIFU2X_MACOS_PATH = None
+
+
+class ImageGrid:
+    """
+    Holds clicks and crop images to whole grid squares based on them. First click is as close to the top left as
+    possible, the next is one square diagonally away from that (in any direction, but makes most sense to be down
+    and right), and the third is as far to the bottom right as possible. The second click is used to estimate grid
+    size, this is then used to figure out how many squares are between the first and third clicks, which gives a more
+    precise size, which is then used to crop to whole squares on all borders.
+    """
+
+    def __init__(self, image_filename, output_path):
+        """
+        Create an ImageGrid
+
+        :param image_filename:
+            The filename of an image to crop
+        """
+        self.clicks = []
+        self.path = Path(image_filename)
+        self.im = Image.open(image_filename)
+        self.output_path = output_path if output_path is not None else self.path.parent
+
+    def handle_click(self):
+        """
+        Builds a click handler to add to a guizero widget containing the image
+        """
+
+        def handler(event):
+            self.clicks.append((event.x, event.y))
+            self.clicks = self.clicks[-3:]
+            if len(self.clicks) == 3:
+                self.trim()
+                event.widget.master.destroy()
+
+        return handler
+
+    def trim(self):
+        """
+        Once we have three clicks, trim the image based on them, save it, and exit the display loop
+        """
+        # Pick up click coordinates
+        tx, ty = self.clicks[0]
+        gx, gy = self.clicks[1]
+        bx, by = self.clicks[2]
+
+        # Make a course estimate of grid size used to determine how many squares
+        # there are between the first and third clicks
+        grid_size_estimate = (abs(gx - tx) + abs(gy - ty)) / 2
+        squares_x = round(abs(tx - bx) / grid_size_estimate)
+        squares_y = round(abs(ty - by) / grid_size_estimate)
+
+        # Use this course estimate to make a finer estimate based on the larger distance
+        # between the first and third click points
+        refined_grid_size_estimate = (abs(tx - bx) / squares_x + abs(ty - by) / squares_y) / 2
+
+        # Crop the top and left
+        top_margin_crop = ty % refined_grid_size_estimate
+        left_margin_crop = tx % refined_grid_size_estimate
+        self.im = self.im.crop((left_margin_crop, top_margin_crop, self.im.width, self.im.height))
+
+        # Crop the bottom and right
+        right_margin_crop = self.im.width % refined_grid_size_estimate
+        bottom_margin_crop = self.im.height % refined_grid_size_estimate
+        self.im = self.im.crop((0, 0, self.im.width - right_margin_crop, self.im.height - bottom_margin_crop))
+
+        # Calculate resultant number of squares in final, cropped, image
+        squares_x = round(self.im.width / refined_grid_size_estimate)
+        squares_y = round(self.im.height / refined_grid_size_estimate)
+
+        # Use this to build an output path next to the input with the right naming for
+        # the next tool to pick up on, and save the result
+        output_path = self.output_path / f'{self.path.name[:-len(self.path.suffix)]}_{squares_x}x{squares_y}.png'
+        logging.info(f'Saving image to {output_path}')
+        self.im.save(fp=output_path)
+
+    @staticmethod
+    def show_and_crop(image_name, output_dir=None):
+        """
+        Load an image, create the very simple GUI, crop when we have three clicks, then return
+        """
+        logging.info('Pick three points - top left, top left + 1 square diagonally, then bottom right')
+        grid = ImageGrid(image_name, output_dir)
+        app = App(title=f'Grid Finder - {image_name}', width=grid.im.width, height=grid.im.height, layout='auto')
+        app.tk.resizable(False, False)
+        picture = Picture(app, image=grid.im)
+        picture.when_clicked = grid.handle_click()
+        app.display()
 
 
 def parse_filename(filename):
@@ -33,7 +122,7 @@ def parse_filename(filename):
     filename = abspath(filename)
     leaf_name = basename(filename)
     # Match in the form foo_bar_12.4x25.3.png and extract the name, 12.4, and 25.3 bits
-    m = re.match(r'(^\w+?)_*(\d+(?:\.\d*)?|\.\d+)x(\d+(?:\.\d*)?|\.\d+)\.png$',
+    m = re.match(r'(^[\w-]+?)_*(\d+(?:\.\d*)?|\.\d+)x(\d+(?:\.\d*)?|\.\d+)\.png$',
                  leaf_name)
     if m:
         name = m.groups()[0]
@@ -83,6 +172,7 @@ class Paper(Enum):
     def name(self):
         return self.value.name
 
+
 def basic_image_ops(image, brighten=1.0, sharpen=None, saturation=None):
     """
     Perform basic brighten, sharpen, colour operations on an image
@@ -108,6 +198,7 @@ def basic_image_ops(image, brighten=1.0, sharpen=None, saturation=None):
         logging.info('Applying saturation {}'.format(saturation))
         image = ImageEnhance.Color(image).enhance(saturation)
     return image
+
 
 def process_image_with_border(im: Image, squares_wide: float, squares_high: float, border_north=5, border_east=5,
                               border_west=5, border_south=5, brighten=None, sharpen=None, saturation=None):
@@ -230,7 +321,6 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border_nort
 
     # Apply enhancements if required
     im = basic_image_ops(im, brighten, sharpen, saturation)
-
 
     width_mm = width_pixels / pixels_per_mm
     height_mm = height_pixels / pixels_per_mm

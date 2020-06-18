@@ -13,7 +13,7 @@ setup(
     license='ASL2.0',
     packages=find_namespace_packages(),
     install_requires=['requests==2.22.0', 'pydotplus==2.0.2', 'rply==0.7.6', 'pillow==6.2.0',
-                      'fpdf==1.7.2', 'pypdf2', 'flask', 'flask-wtf', 'Flask-Bootstrap4', 'pyyaml'],
+                      'fpdf==1.7.2', 'pypdf2', 'flask', 'flask-wtf', 'Flask-Bootstrap4', 'pyyaml', 'guizero'],
     include_package_data=True,
     test_suite='nose.collector',
     tests_require=['nose'],
@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': ['pfs_extract=pathfinder.mapmaker.extract:main',
                             'pfs_build_maps=pathfinder.mapmaker.build_maps:main',
-                            'pfs_sheets=pathfinder.chronicle.generate_sheets:main']
+                            'pfs_sheets=pathfinder.chronicle.generate_sheets:main',
+                            'pfs_grid=pathfinder.mapmaker.grid:main']
     },
     zip_safe=False)

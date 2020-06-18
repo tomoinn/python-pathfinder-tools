@@ -184,7 +184,8 @@ def tier(tier: int, slow=False):
 
     def annotate(sheet: ChronicleSheet):
         tier_cellnames = [name for name in sheet.cells if str.startswith(name, 'subtier')]
-        tier_cellnames.remove(f'subtier_{tier}_{"slow" if slow else "fast"}')
+        if f'subtier_{tier}_slow' in tier_cellnames:
+            tier_cellnames.remove(f'subtier_{tier}_{"slow" if slow else "fast"}')
         for tier_cellname in tier_cellnames:
             sheet.strike_out(tier_cellname)
 

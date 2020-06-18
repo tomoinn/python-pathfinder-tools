@@ -117,6 +117,7 @@ def main():
 
     for entry in scandir(path=input_dir):
         try:
+            logging.info(f'entry = {entry}')
             filename, _, name, width, height = mapmaker.parse_filename(abspath(input_dir + '/' + entry.name))
             logging.info(f'Processing {name}, width={width}, height={height}, mode={mode}')
 

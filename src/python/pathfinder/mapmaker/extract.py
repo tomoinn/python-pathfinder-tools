@@ -39,8 +39,8 @@ def main():
 
     for index, image in enumerate(extract_images_from_pdf(pdf_filename=pdf_filename,
                                                           min_height=100,
-                                                          min_width=100,
-                                                          min_file_size=1024 * 100, page=page, to_page=to_page)):
+                                                          min_width=50,
+                                                          min_file_size=1024 * 50, page=page, to_page=to_page)):
         image.save('{}/image-{}.png'.format(output_dir, index))
 
     print("""Done - images written to {}. 
@@ -48,5 +48,6 @@ def main():
     You should now remove any non-map images, and rename map images to match IMAGENAME_WWWxHHH.png
     where WWW and HHH are the number of 1 inch squares across the width and height of the map 
     respectively. For example, you might end up with a file 'canyon_12x8.png' for a map 12 tiles 
-    across and 8 high.
+    across and 8 high. You can also use the pfs_grid tool to automate this process, including cropping
+    to whole squares which makes use with roll20 vastly easier.
     """.format(output_dir))
