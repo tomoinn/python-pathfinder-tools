@@ -109,8 +109,8 @@ def main():
         logging.error('Tiled mode requires a valid paper size, aborting')
         exit(0)
 
-    def run_waifu2x(i):
-        i = mapmaker.run_waifu2x(i, scale=True, noise=2)
+    def run_waifu2x(i, noise=2):
+        i = mapmaker.run_waifu2x(i, scale=True, noise=noise)
         for _ in range(scale):
             i = mapmaker.run_waifu2x(i, scale=True, noise=None)
         return i
@@ -125,7 +125,7 @@ def main():
                 png_filename = f'{output_dir}/{name}_c{saturation}s{sharpen}b{brighten}_{width}x{height}.png'
                 if not isfile(png_filename):
                     image = Image.open(filename)
-                    image = run_waifu2x(image)
+                    image = run_waifu2x(image, noise=2)
                     image = mapmaker.basic_image_ops(image, brighten, sharpen, saturation)
                     image.save(fp=png_filename, format='PNG')
                 else:

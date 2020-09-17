@@ -103,6 +103,7 @@ class ImageGrid:
         app.tk.resizable(False, False)
         picture = Picture(app, image=grid.im)
         picture.when_clicked = grid.handle_click()
+        picture.tk.config(cursor='cross')
         app.display()
 
 

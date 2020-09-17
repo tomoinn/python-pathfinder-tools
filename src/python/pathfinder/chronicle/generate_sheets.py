@@ -19,6 +19,7 @@ parser.add_argument('output_dir', nargs='?', type=str,
                     default=None)
 parser.add_argument('-s', '--season', type=int, help='Explicitly set the season, normally we can auto-detect this',
                     default=0)
+parser.add_argument('-t', '--title', type=str, help='Set the title, otherwise pulled from chronicle metadata', default=None)
 
 
 def main():
@@ -33,6 +34,10 @@ def main():
         logging.info('Creating new output directory {}'.format(output_dir))
         os.makedirs(output_dir)
     scenario_title, scenario_season, scenario_number = chronicle_info(input_filename)
+    if options.title is not None:
+        file_prefix = options.title
+    else:
+        file_prefix = f'{scenario_season}-{scenario_number}'
     for p in parse_reporting_sheet(sheet_export_url=conf.sheets_url):
         logging.info(f'Creating sheet for {p.player_name} - {p.character_name}')
         # Non-specified day-job rolls are strings and can't be parsed as ints
@@ -42,7 +47,7 @@ def main():
             dayjob = p.dayjob_roll
         annotate_chronicle_sheet(
             input_filename=input_filename,
-            output_filename=f'{output_dir}/{scenario_season}-{scenario_number} {p.player_name}.pdf',
+            output_filename=f'{output_dir}/{file_prefix} {p.player_name}.pdf',
             season=season,
             annotation_functions=[
                 # show_cells(),

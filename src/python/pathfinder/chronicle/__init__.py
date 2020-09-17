@@ -401,7 +401,10 @@ def chronicle_info(input_filename: str):
             input_pdf.decrypt('')
         # Try to find the scenario number, and therefore the season to use
         print(input_pdf.getDocumentInfo())
-        title = input_pdf.getDocumentInfo()['/Title']
+        try:
+            title = input_pdf.getDocumentInfo()['/Title']
+        except KeyError:
+            title = 'Unknown'
         m = re.search(r'(\d\d)(\d\d)', title)
         if m:
             season = int(m.groups()[0])

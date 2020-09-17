@@ -1,5 +1,8 @@
 # Dict of cell name to (x, y, width, height, centred?) for seasons 3, 4
 def get_cells_for_season(season: int):
+    if season in [20]:
+        # Ravenmoor
+        return cells_ravenmoor
     if season in [11]:
         # Not really season 11, but some season 10 scenarios have five tiers for
         # some reason, so we need a way to express that
@@ -11,6 +14,41 @@ def get_cells_for_season(season: int):
     if season in [6]:
         return cells_season_6
     return {}
+
+cells_ravenmoor = {
+    'event': (15, 251, 25, 7, False),
+    'event_code': (45, 251, 28, 7, False),
+    'date': (78.5, 251, 27, 7, False),
+    'gm_sig': (110, 251, 45.5, 7, False),
+    'gm_number': (162, 251, 37, 7, True),
+    'player_name': (13, 44, 30, 7, False),
+    'character_name': (56.5, 44, 36.5, 7, False),
+    'player_number': (99.5, 44, 20, 7, True),
+    'character_number': (124.5, 44, 12, 7, True),
+    'character_faction': (142, 44, 20, 7, True),
+    'starting_xp': (170.5, 59.5, 30, 7, True),
+    'xp_gained': (170.5, 71, 21.5, 7, True),
+    'xp_gained_initials': (192, 71, 8, 7, True),
+    'final_xp': (170.5, 83, 30, 7, True),
+    'initial_fame': (170.5, 105, 14, 7, True),
+    'initial_prestige': (185.5, 105, 14, 7, True),
+    'prestige_gained': (170.5, 116.5, 21.5, 7, True),
+    'prestige_gained_initials': (192, 116.5, 8, 7, True),
+    'prestige_spent': (170.5, 128.5, 29.5, 7, True),
+    'current_fame': (170.5, 140, 14, 7, True),
+    'current_prestige': (185.5, 140, 14, 7, True),
+    'starting_gp': (170.5, 160.5, 29.5, 7, True),
+    'gp_gained': (170.5, 172, 21.5, 7, True),
+    'gp_gained_initials': (192, 172, 8, 7, True),
+    'day_job': (170.5, 183.5, 21.5, 7, True),
+    'day_job_initials': (192, 183.5, 8, 7, True),
+    'items_sold': (170.5, 195.5, 29.5, 7, True),
+    'gp_subtotal': (170.5, 206.5, 29.5, 7, True),
+    'gp_spent': (170.5, 218.5, 29.5, 7, True),
+    'gp_total': (170.5, 232.5, 29.5, 7, True),
+    'note_top': (13.5, 38.5, 148, 5, False),
+    'note_bottom': (13, 264, 187.5, 7, False)
+}
 
 
 cells_season_3 = {
