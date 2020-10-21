@@ -147,7 +147,8 @@ usage: pfs_grid [-h] input_dir [output_dir]
 
 positional arguments:
   input_dir   search INPUT_DIR for map images of form NAME.png
-  output_dir  write images to OUTPUT_DIR, will be created if not found. If not supplied, will use INPUT_DIR
+  output_dir  write images to OUTPUT_DIR, will be created if not found. 
+              If not supplied, will use INPUT_DIR
 
 optional arguments:
   -h, --help  show this help message and exit
