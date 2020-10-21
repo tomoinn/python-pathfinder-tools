@@ -1,4 +1,4 @@
-# Python-pathfinder-tools
+# Python-pathfinder-tools v0.2
 
 A set of utilities to do things related to the 
 Pathfinder tabletop role playing game. These tools are really intended 
@@ -8,7 +8,7 @@ dependencies. Tested on linux and MacOS.
 There are some command-line tools, and some utility libraries you could use
 to write your own tools if you were so minded.
 
-At the moment this isn't uploaded anywhere, so to install you'll want to do:
+To run from github directly do:
 
 ```
 > git checkout https://github.com/tomoinn/python-pathfinder-tools.git
@@ -16,7 +16,9 @@ At the moment this isn't uploaded anywhere, so to install you'll want to do:
 > python3 setup.py install
 ```
 
-Requires Python3.7 upwards, use a virtual environment by preference, although it'll probably
+Alternatively install with `pip3 install python-pathfinder-tools`
+
+Requires Python3.8 upwards, use a virtual environment by preference, although it'll probably
 work without one.
 
 # Tools
@@ -99,21 +101,26 @@ printed by a professional print shop.
 
 * Requires the pdfimages tool from poppler-utils to extract images
   from scenario PDFs (install with apt or brew)
-* Requires waifu2x to do smart upscaling, although if it's not present
-  the tools will still run at lower quality. On linux you'll need
-  to install torch, have a CUDA compatible GPU, and build waifu2x. On
-  MacOS there's a port to use the metal API, it can be downloaded from
-  https://github.com/imxieyi/waifu2x-mac/releases
+* Ideally requires a CUDA compatible GPU and the associated CUDA installation,
+  but can revert to CPU only for scaling if that's not available
   
 ### Usage
 
 This is a three-stage process. Firstly you run `pfs_extract` to pull images that look like they might be maps,
 as well as any other large images (it's nice to have these for characters and scenes especially if you're using
 a virtual tabletop). Secondly you go through the output, removing any duplicates, files that aren't maps, and 
-renaming anything you want to use as a map. Map images must be named e.g. `canyon_25x30.png` - this lets the
-final part of the process know how big (in one inch squares) the map needs to be. Finally you run the `pfs_build_maps`
-tool which scans a directory for images with the right name pattern, scales and de-noises, does some basic
-image processing operations, and packages them into your choice of output format.
+renaming anything you want to use as a map. 
+
+You can then either manually rename map images to e.g. `canyon_25x30.png`, or run the `pfs_grid` tool to calculate
+sizes interactively. The UI for this is pretty basic, but it shows each file in a directory in turn and prompts
+for mouse clicks on the NW of a grid square at the top left of the image, then the SE corner of that square, and
+finally another grid intersection on the bottom right of the map. It'll attempt to work out the size, and crop to
+whole squares, but you might need to re-run the tool a few times to get it exactly right.
+
+Finally you run the `pfs_build_maps` tool which scans a directory for images with the right name pattern, scales 
+and de-noises, does some basic image processing operations, and packages them into your choice of output format.
+
+Extract images with `pfs_extract`:
 
 ```
 > pfs_extract -h
@@ -131,6 +138,22 @@ optional arguments:
   -t TOPAGE, --topage TOPAGE
                         optionally extract up to the given page (inclusive)
 ```
+
+Either manually rename, or run `pfs_grid`:
+
+```
+> pfs_grid -h
+usage: pfs_grid [-h] input_dir [output_dir]
+
+positional arguments:
+  input_dir   search INPUT_DIR for map images of form NAME.png
+  output_dir  write images to OUTPUT_DIR, will be created if not found. If not supplied, will use INPUT_DIR
+
+optional arguments:
+  -h, --help  show this help message and exit
+```
+
+Then run `pfs_build_maps` to generate scaled images or PDFs from these files:
 
 ```
 > pfs_build_maps -h
@@ -153,9 +176,9 @@ optional arguments:
                         sharpen, 0.0-2.0, default 1.1
   -b BRIGHTEN, --brighten BRIGHTEN
                         brighten, 0.0-2.0, default 1.2
-  -w SCALE, --scale SCALE
-                        number of additional scaling operations after initial
-                        scale + denoise pass, default 1
+  -g GRIDSIZE, --gridsize GRIDSIZE
+                        target size in pixels of a grid square, defaults to 120
+                        for print, and 60 for screen use i.e. roll20
   -p PADDING, --padding PADDING
                         tiled mode only - padding per output page in mm,
                         default 5
@@ -175,12 +198,6 @@ optional arguments:
                         preset, overrides settings from presets within the
                         config file, available presets are [library|roll20]
 ```
-
-Before this tool will work you will need to update the config which should now be in `~/.pathfinder/config.yaml`
-with the appropriate paths to your `torch` and `waifu2x lua` files (on linux) or to the metal-based command
-line tool on `macos` - the config should be self explanatory here (remove any leading underscores on property keys,
-the default config is my setup on linux, if you're using a mac you'll want to change the `_mac` to `mac` and add
-underscores to the linux paths)
 
 You can either specify all options every time, or you can set up your own profiles. The ordering of priorities
 will be:
@@ -219,3 +236,8 @@ feats and dependencies, and render to graphviz dot format text.
 
 Code to read in spell lists and generate data dumps containing
 available spells for a given set of classes.
+
+## pathfinder.sessions
+
+Code to handle the horrible format of Paizo's organised play session
+list pages and pull out the information from them.

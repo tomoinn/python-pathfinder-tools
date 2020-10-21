@@ -12,10 +12,10 @@ import logging
 logging.basicConfig(level=logging.INFO)
 parser = ArgumentParser()
 
-parser.add_argument('input_dir', type=str, help='search INPUT_DIR for map images of form name_WWxHH.png')
+parser.add_argument('input_dir', type=str, help='search INPUT_DIR for map images of form NAME.png')
 parser.add_argument('output_dir', nargs='?', type=str,
                     help='write images to OUTPUT_DIR, will be created if not found. ' +
-                         'If not supplied, will use input_dir.',
+                         'If not supplied, will use INPUT_DIR',
                     default=None)
 
 

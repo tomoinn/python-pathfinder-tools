@@ -1,10 +1,6 @@
 sheets:
   url: https://docs.google.com/spreadsheets/d/1QozrfVAk0Z8lLiBil6VTblWlpqRf3XS-wVb7c5uBAVo/export?format=csv&gid=461828162
 map:
-  waifu2x:
-    lua: '/home/tom/git/waifu2x/waifu2x.lua'
-    torch: '/home/tom/torch/install/bin/th'
-    _mac: '/Users/tom/waifu2x-mac-cli/waifu2x'
   default:
     padding: 5
     overlap: 3
@@ -13,11 +9,11 @@ map:
     brighten: 1.2
     paper: 'A4'
     mode: 'tiled'
-    scale: 1
+    gridsize: 120
   presets:
     library:
       padding: 10
       paper: 'A3'
     roll20:
       mode: 'png'
-      scale: 0
+      gridsize: 60

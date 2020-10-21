@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from os import scandir
 from os.path import abspath, isfile
 from pathfinder.utils import ensure_dir, Config
-
+from pathfinder.mapmaker.waifu2x_pytorch import Waifu2x
 from PIL import Image
 
 from pathfinder import mapmaker
@@ -11,20 +11,6 @@ from pathfinder import mapmaker
 logging.basicConfig(level=logging.INFO)
 
 conf = Config()
-
-mapmaker.WAIFU2X_LUA_PATH = conf.get('map_waifu2x_lua')
-mapmaker.TORCH_PATH = conf.get('map_waifu2x_torch')
-mapmaker.WAIFU2X_MACOS_PATH = conf.get('map_waifu2x_mac')
-
-# We need one of either the two linux paths, or the mac path, to use waifu2x
-if mapmaker.WAIFU2X_LUA_PATH is None and mapmaker.TORCH_PATH is None:
-    logging.info('Linux waifu2x paths are not set')
-else:
-    logging.info(f'Linux waifu2x configured, lua={mapmaker.WAIFU2X_LUA_PATH}, torch={mapmaker.TORCH_PATH}')
-if mapmaker.WAIFU2X_MACOS_PATH is None:
-    logging.info('MacOS waifu2x path is not set')
-else:
-    logging.info(f'MacOS waifu2x configured, path={mapmaker.WAIFU2X_MACOS_PATH}')
 
 parser = ArgumentParser()
 parser.add_argument('input_dir', type=str, help='search INPUT_DIR for map images of form name_WWxHH.png')
@@ -38,9 +24,9 @@ parser.add_argument('-s', '--sharpen', type=float, help=f'sharpen, 0.0-2.0, defa
                     default=conf.map_default_sharpen)
 parser.add_argument('-b', '--brighten', type=float, help=f'brighten, 0.0-2.0, default {conf.map_default_brighten}',
                     default=conf.map_default_brighten)
-parser.add_argument('-w', '--scale', type=int,
-                    help=f'number of additional scaling operations after initial scale + denoise pass, default {conf.map_default_scale}',
-                    default=conf.map_default_scale)
+parser.add_argument('-g', '--gridsize', type=int,
+                    help=f'target grid size in pixels, images will be scaled up until this is exceeded, default {conf.map_default_gridsize}',
+                    default=conf.map_default_gridsize)
 parser.add_argument('-p', '--padding', type=float,
                     help=f'tiled mode only - padding per output page in mm, default {conf.map_default_padding}',
                     default=conf.map_default_padding)
@@ -63,6 +49,8 @@ parser.add_argument('-x', '--preset', type=str,
 def main():
     options = parser.parse_args()
 
+    waifu2x = Waifu2x()
+
     # Get directories - if the output DIR isn't specified we use the same as the input
     input_dir = abspath(options.input_dir)
     if options.output_dir is None:
@@ -83,7 +71,7 @@ def main():
     overlap = options.overlap
     mode = options.mode
     specified_paper_size = options.paper_size
-    scale = options.scale
+    gridsize = options.gridsize
 
     # Load from presets if specified
     if options.preset is not None:
@@ -95,7 +83,7 @@ def main():
         overlap = conf.get(p + 'overlap', default=overlap)
         specified_paper_size = conf.get(p + 'paper', default=specified_paper_size)
         mode = conf.get(p + 'mode', default=mode)
-        scale = conf.get(p + 'scale', default=scale)
+        gridsize = conf.get(p + 'gridsize', default=gridsize)
 
     # Try to parse out paper size
     try:
@@ -105,15 +93,16 @@ def main():
         paper_size = None
 
     # Fail if we're in tiled mode and there's no paper size defined
-    if paper_size is None and mode.upper() is 'TILED':
+    if paper_size is None and mode.upper() == 'TILED':
         logging.error('Tiled mode requires a valid paper size, aborting')
         exit(0)
 
-    def run_waifu2x(i, noise=2):
-        i = mapmaker.run_waifu2x(i, scale=True, noise=noise)
-        for _ in range(scale):
-            i = mapmaker.run_waifu2x(i, scale=True, noise=None)
-        return i
+    def run_waifu2x(i: Image) -> Image:
+        # Scale up until we have the right gridsize
+        while (i.size[0] < width * gridsize):
+            i = waifu2x.scale(i)
+        # Then scale the image back down to the target size
+        return i.resize((int(width * gridsize), int(height * gridsize)), resample=Image.LANCZOS)
 
     for entry in scandir(path=input_dir):
         try:
@@ -125,7 +114,7 @@ def main():
                 png_filename = f'{output_dir}/{name}_c{saturation}s{sharpen}b{brighten}_{width}x{height}.png'
                 if not isfile(png_filename):
                     image = Image.open(filename)
-                    image = run_waifu2x(image, noise=2)
+                    image = run_waifu2x(image)
                     image = mapmaker.basic_image_ops(image, brighten, sharpen, saturation)
                     image.save(fp=png_filename, format='PNG')
                 else:
