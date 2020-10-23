@@ -39,8 +39,9 @@ def main():
 
     for index, image in enumerate(extract_images_from_pdf(pdf_filename=pdf_filename,
                                                           min_height=100,
-                                                          min_width=50,
-                                                          page=page, to_page=to_page)):
+                                                          min_width=100,
+                                                          page=page - 1 if page is not None else None,
+                                                          to_page=to_page if to_page else page)):
         image.save('{}/image-{}.png'.format(output_dir, index))
 
     print("""Done - images written to {}. 

@@ -498,21 +498,28 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
             # Notice that we need metadata from the object
             # so we can make sense of the image data
             size = tuple(map(int, (vobj['/Width'], vobj['/Height'])))
-            img = Image.frombytes(image_format, size, buf,
-                                  decoder_name='raw')
-            return img
+            try:
+                return Image.frombytes(image_format, size, buf,
+                                       decoder_name='raw')
+            except ValueError:
+                # We don't care about non-RGB images in this case
+                pass
         elif vobj['/Filter'] == '/DCTDecode':
             # A compressed image
-            img = Image.open(io.BytesIO(vobj._data))
-            return img
+            return Image.open(io.BytesIO(vobj._data))
 
     def images_in_page(pdf_page):
+        # Find the Resources block and look for images, or things into which we can recurse
         r = pdf_page['/Resources']
         if '/XObject' in r:
             for k, v in r['/XObject'].items():
                 vobj = v.getObject()
                 if vobj['/Subtype'] != '/Image' or '/Filter' not in vobj:
-                    # Reject things that aren't images
+                    # Reject things that aren't images but recurse into groups
+                    if '/Resources' in vobj and '/Group' in vobj:
+                        for sub_image in images_in_page(vobj):
+                            if sub_image:
+                                yield sub_image
                     continue
                 if img := image_from_vobj(vobj):
                     # Find an SMask if available and apply it
@@ -520,10 +527,15 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
                         img.putalpha(mask_img)
                     yield img
 
+    # Read in the PDF file
     in_pdf = pdf.PdfFileReader(pdf_filename)
-    for page_number in range(page or 0, to_page or in_pdf.getNumPages()):
-        # Iterate over target page range, and over images in each page
+    # Bug sometimes in PDFs with spaces in their filename (meh, whatever..)
+    if in_pdf.isEncrypted:
+        in_pdf.decrypt('')
+    # Iterate over target page range, and over images in each page
+    for page_number in range(max(0, page or 0),
+                             min(to_page or in_pdf.getNumPages(), in_pdf.getNumPages())):
         for image in images_in_page(in_pdf.getPage(page_number)):
             width, height = image.size
-            if width >= min_width and height >= min_height and (image.mode == 'RGBA' or image.mode == 'RGB'):
+            if width >= min_width and height >= min_height and image.mode[:3] == 'RGB':
                 yield image
