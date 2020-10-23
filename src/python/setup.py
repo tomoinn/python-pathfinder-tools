@@ -4,7 +4,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(
     name='python-pathfinder-tools',
-    version='0.2',
+    version='0.3',
     description='Python code to do various helpful pathfinder RPG related things',
     classifiers=['Programming Language :: Python :: 3.8'],
     url='https://github.com/tomoinn/python-pathfinder-tools/',

@@ -1,14 +1,14 @@
+import io
 import logging
 import math
 import re
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
-from os import scandir, stat
-from os.path import dirname, basename, abspath, isfile
+from os.path import dirname, basename, abspath
 from pathlib import Path
 
+import PyPDF2 as pdf
 from PIL import Image, ImageEnhance
 from fpdf import FPDF
 from guizero import App, Picture
@@ -185,7 +185,7 @@ def basic_image_ops(image, brighten=1.0, sharpen=None, saturation=None):
     :return:
         The modified image
     """
-    if brighten is not None and brighten is not 1.0:
+    if brighten is not None and brighten != 1.0:
         logging.info('Applying brighten {}'.format(brighten))
         image = ImageEnhance.Brightness(image).enhance(brighten)
     if sharpen is not None:
@@ -470,61 +470,60 @@ def make_pdf(images, pdf_filename):
     logging.info('make_pdf: Wrote {} images to PDF file {}'.format(len(images['images']), pdf_filename))
 
 
-def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_width=100, min_height=100,
-                            min_file_size=1024 * 500):
+def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_width=100, min_height=100):
     """
-    Uses the pdfimages tool from poppler-utils to extract images from a given page of the specified PDF.
+    Pull images out of a PDF file by page range, including finding any SMask elements and applying them
+    as alpha channels. Technique taken from this stackoverflow post :
+    https://stackoverflow.com/questions/56374258/extracting-images-from-pdf-using-python
 
     :param pdf_filename:
-        Full path of the PDF to use. Specify your pathfinder scenario PDF here.
+        Filename of the PDF to read
     :param page:
-        Page number to scan, None to scan all pages
+        Start page, defaults to 0
     :param to_page:
-        Page number up to which to scan, ignored if page is None, if left at the default this is set to whatever value
-        page is set to to scan a single page, otherwise a range of pages can be specified from 'page' to 'to_page'
-        inclusive
+        End page, used in a range so the pages scanned will be page to to_page-1 inclusive. Defaults
+        to the length of the PDF file
     :param min_width:
-        Minimum image width to include in the output iterator, defaults to 100 pixels
+        Minimum width in pixels, below this images are rejected
     :param min_height:
-        Minimum image height to include in the output iterator, defaults to 100 pixels
-    :param min_file_size:
-        Minimum file size to include in the output iterator, defaults to 100K
+        Minimum height in pixels, below this images are rejected
     :return:
-        A lazy iterator over image objects corresponding to matching images
+        A generate of images from this PDF
     """
-    with tempfile.TemporaryDirectory() as dir:
-        command = ['pdfimages', '-png']
-        if page is not None and to_page is None:
-            to_page = page
-        if page is not None:
-            command.extend(['-f', str(page), '-l', str(to_page)])
-        command.extend([pdf_filename, dir + '/image'])
-        logging.info('extract_images_from_pdf: ' + ' '.join(command))
-        subprocess.run(command, shell=False, check=True, capture_output=True)
-        logging.info('extract_images_from_pdf: dir={}'.format(dir))
-        for entry in scandir(path=dir):
-            filesize = stat(dir + '/' + entry.name).st_size
-            if entry.name.endswith('png') and not entry.is_dir() and filesize >= min_file_size:
-                im = Image.open(dir + '/' + entry.name)
-                width, height = im.size
-                if width >= min_width and height >= min_height and im.mode == 'RGB':
-                    logging.info(
-                        'extract_images_from_pdf: found {} - {} by {} with size {} bytes'.format(entry.name, width,
-                                                                                                 height, filesize))
-                    image_number = int(entry.name[entry.name.find('-') + 1:entry.name.find('.')])
-                    if image_number < 99:
-                        mask_name = f'image-{image_number + 1:03d}.png'
-                    else:
-                        mask_name = f'image-{image_number + 1}.png'
-                    if isfile(dir + '/' + mask_name):
-                        mask_im = Image.open(dir + '/' + mask_name)
-                        mask_width, mask_height = mask_im.size
-                        if mask_width == width and mask_height == height and mask_im.mode == 'L':
-                            logging.info(f'Found possible mask, mode is {mask_im.mode}, '
-                                         f'filename {mask_name}, combining')
-                            mask_command = ['convert', dir + '/' + entry.name, dir + '/' + mask_name, '-compose',
-                                            'CopyOpacity', '-composite', dir + '/' + entry.name]
-                            subprocess.run(mask_command, shell=False, check=True, capture_output=True)
-                            im = Image.open(dir + '/' + entry.name)
-                    yield im
 
+    def image_from_vobj(vobj, image_format='RGB'):
+        if vobj['/Filter'] == '/FlateDecode':
+            # A raw bitmap
+            buf = vobj.getData()
+            # Notice that we need metadata from the object
+            # so we can make sense of the image data
+            size = tuple(map(int, (vobj['/Width'], vobj['/Height'])))
+            img = Image.frombytes(image_format, size, buf,
+                                  decoder_name='raw')
+            return img
+        elif vobj['/Filter'] == '/DCTDecode':
+            # A compressed image
+            img = Image.open(io.BytesIO(vobj._data))
+            return img
+
+    def images_in_page(pdf_page):
+        r = pdf_page['/Resources']
+        if '/XObject' in r:
+            for k, v in r['/XObject'].items():
+                vobj = v.getObject()
+                if vobj['/Subtype'] != '/Image' or '/Filter' not in vobj:
+                    # Reject things that aren't images
+                    continue
+                if img := image_from_vobj(vobj):
+                    # Find an SMask if available and apply it
+                    if mask_img := (image_from_vobj(vobj['/SMask'], image_format='L') if '/SMask' in vobj else None):
+                        img.putalpha(mask_img)
+                    yield img
+
+    in_pdf = pdf.PdfFileReader(pdf_filename)
+    for page_number in range(page or 0, to_page or in_pdf.getNumPages()):
+        # Iterate over target page range, and over images in each page
+        for image in images_in_page(in_pdf.getPage(page_number)):
+            width, height = image.size
+            if width >= min_width and height >= min_height and (image.mode == 'RGBA' or image.mode == 'RGB'):
+                yield image

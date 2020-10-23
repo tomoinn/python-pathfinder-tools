@@ -1,4 +1,4 @@
-# Python-pathfinder-tools v0.2
+# Python-pathfinder-tools v0.3
 
 A set of utilities to do things related to the 
 Pathfinder tabletop role playing game. These tools are really intended 
@@ -99,8 +99,6 @@ printed by a professional print shop.
 
 ### Installation
 
-* Requires the pdfimages tool from poppler-utils to extract images
-  from scenario PDFs (install with apt or brew)
 * Ideally requires a CUDA compatible GPU and the associated CUDA installation,
   but can revert to CPU only for scaling if that's not available
   

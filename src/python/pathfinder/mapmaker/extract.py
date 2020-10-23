@@ -40,7 +40,7 @@ def main():
     for index, image in enumerate(extract_images_from_pdf(pdf_filename=pdf_filename,
                                                           min_height=100,
                                                           min_width=50,
-                                                          min_file_size=1024 * 50, page=page, to_page=to_page)):
+                                                          page=page, to_page=to_page)):
         image.save('{}/image-{}.png'.format(output_dir, index))
 
     print("""Done - images written to {}. 
