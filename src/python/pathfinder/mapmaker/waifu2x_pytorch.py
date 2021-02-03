@@ -4,7 +4,7 @@ from PIL import Image
 from torchvision.utils import make_grid
 import logging
 from pathfinder.mapmaker.pytorch import CARN_V2, network_to_half, ImageSplitter
-import pkg_resources
+import importlib.resources as resources
 
 LOGGER = logging.getLogger('waifu2x')
 
@@ -33,8 +33,8 @@ class Waifu2x:
         is available, using the CPU if not
         """
         LOGGER.info('Creating image scaler')
-        checkpoint = pkg_resources.resource_filename('pathfinder.mapmaker.pytorch',
-                                                     'CARN_model_checkpoint.pt')
+        checkpoint = resources.open_binary('pathfinder.mapmaker.pytorch',
+                                           'CARN_model_checkpoint.pt')
         self.model = CARN_V2(color_channels=3, mid_channels=64, conv=nn.Conv2d,
                              single_conv_size=3, single_conv_group=1,
                              scale=2, activation=nn.LeakyReLU(0.1),
