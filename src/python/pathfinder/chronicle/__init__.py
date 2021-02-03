@@ -284,6 +284,7 @@ def gold_and_day_job(gp_gained: int, roll: str):
             return 100
         if r <= 40:
             return 150
+        return 150
 
     def annotate(sheet: ChronicleSheet):
         sheet.texts(gp_gained=gp_gained)

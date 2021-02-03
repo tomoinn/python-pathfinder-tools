@@ -171,7 +171,7 @@ cells_season_11 = {
     'day_job_initials': (189.5, 208.5, 11, 7, True),
     'gp_spent': (167, 221, 33, 7, True),
     'gp_total': (167, 233.5, 33, 7, True),
-    'note_top': (13.5, 59.5, 148, 5, False),
+    'note_top': (17.5, 50.5, 148, 5, False),
     'note_bottom': (13, 264, 187.5, 7, False)
 }
 
