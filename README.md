@@ -1,9 +1,12 @@
-# Python-pathfinder-tools v0.3
+# Python-pathfinder-tools v0.4.1
 
 A set of utilities to do things related to the 
 Pathfinder tabletop role playing game. These tools are really intended 
 for those already comfortable with Python, they may also have external
-dependencies. Tested on linux and MacOS.
+dependencies. Tested on linux, MacOS and Win10. Note that CUDA GPU acceleration is only available for Nvidia GPUs, and
+unless you build Torch from source yourself, only available on linux and Win10. This library will work on MacOS, but
+the super-resolution upscaling for map images will be much slower (go make yourself a cup of tea while it thinks about
+everything!)
 
 There are some command-line tools, and some utility libraries you could use
 to write your own tools if you were so minded.
@@ -20,6 +23,53 @@ Alternatively install with `pip3 install python-pathfinder-tools`
 
 Requires Python3.8 upwards, use a virtual environment by preference, although it'll probably
 work without one.
+
+# Installation under Windows
+
+The tools here will run under Win10 and Python3.8
+
+1. Get Python3.8 from https://www.python.org/ftp/python/3.8.7/python-3.8.7-amd64.exe, run the installer and make sure you
+   enable the **add to path** option
+2. If you have an Nvidia GPU, make sure you've updated your graphics card drivers to the current version
+3. Open a terminal window (regular CMD or PowerShell, doesn't really matter)
+4. Run this command to install the GPU accelerated libraries used when upscaling (if you don't have a compatible GPU this
+   will still work, but you obviously won't gain any performance boosts) - this is all on one line, make sure you don't
+   split it:
+
+```
+pip install torch===1.7.1+cu110 torchvision===0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
+5. Next install the pathfinder tools library:
+
+```bash
+pip install python-pathfinder-tools
+```
+
+6. You should now be able to run the `pfs_extract`, `pfs_grid`, and `pfs_build_maps` tools to generate upscaled
+   maps from scenario PDFs, and the `pfs_sheets` tool to build chronicle sheets for your players after the game. See
+   the docs below for more details on running and configuring these tools.
+   
+# Installation under Linux
+
+1. Get Python3.8 from your normal software source. Ensure that `pip` as used below is using this installation - I tend to
+   use a virtual environment here, but you don't have to.
+2. Install Nvidia drivers if available and appropriate
+3. Use `pip` to install the appropriate version of torch:
+
+```bash
+pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
+4. Install the pathfinder tools
+
+```bash
+pip install python-pathfinder-tools
+```
+
+5. You should now be able to run the `pfs_extract`, `pfs_grid`, and `pfs_build_maps` tools to generate upscaled
+   maps from scenario PDFs, and the `pfs_sheets` tool to build chronicle sheets for your players after the game. See
+   the docs below for more details on running and configuring these tools.
 
 # Tools
 
