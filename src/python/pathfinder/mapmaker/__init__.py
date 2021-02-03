@@ -492,17 +492,35 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
     """
 
     def image_from_vobj(vobj, image_format='RGB'):
+        """
+        This isn't an ideal method, it seems to have to ignore a lot of exceptions and assertion failures
+        for some older PDF documents. It should, however, manage to extract most available images.
+
+        :param vobj:
+        :param image_format:
+        :return:
+        """
         if vobj['/Filter'] == '/FlateDecode':
             # A raw bitmap
-            buf = vobj.getData()
-            # Notice that we need metadata from the object
-            # so we can make sense of the image data
-            size = tuple(map(int, (vobj['/Width'], vobj['/Height'])))
             try:
-                return Image.frombytes(image_format, size, buf,
-                                       decoder_name='raw')
-            except ValueError:
-                # We don't care about non-RGB images in this case
+                buf = vobj.getData()
+                # Notice that we need metadata from the object
+                # so we can make sense of the image data
+                size = tuple(map(int, (vobj['/Width'], vobj['/Height'])))
+                try:
+                    if isinstance(buf, str):
+                        i = Image.frombytes(image_format, size, bytes(buf, 'UTF-8'), decoder_name='raw')
+                    else:
+                        i = Image.frombytes(image_format, size, buf, decoder_name='raw')
+                    return i
+                except ValueError as ve:
+                    # We don't care about non-RGB images in this case
+                    pass
+                except TypeError as te:
+                    # Sometimes buf is a string, pretty sure this is wrong but hey
+                    pass
+            except AssertionError:
+                # Seems to come up with some older PDFs, possibly when trying to interpret mask images
                 pass
         elif vobj['/Filter'] == '/DCTDecode':
             # A compressed image
