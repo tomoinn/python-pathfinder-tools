@@ -55,8 +55,8 @@ class Config:
             logging.info(f'No config file found, creating {config_file}')
             with open_text('pathfinder.utils', 'default_config.yaml') as default_config:
                 config = yaml.load(default_config, Loader=yaml.FullLoader)
-                with open(config_file, 'w') as config_file:
-                    yaml.dump(config, config_file)
+                with open(config_file, 'w') as config_file_obj:
+                    yaml.dump(config, config_file_obj)
         with open(config_file, 'r') as file:
             self._config = yaml.load(file, Loader=yaml.FullLoader)
         self._separator = separator
