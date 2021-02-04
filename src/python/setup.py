@@ -4,7 +4,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(
     name='python-pathfinder-tools',
-    version='0.4.1',
+    version='0.4.2',
     description='Python code to do various helpful pathfinder RPG related things',
     classifiers=['Programming Language :: Python :: 3.8'],
     url='https://github.com/tomoinn/python-pathfinder-tools/',
@@ -15,7 +15,6 @@ setup(
     install_requires=['requests==2.22.0', 'pydotplus==2.0.2', 'rply==0.7.6', 'pillow==8.1.0',
                       'fpdf==1.7.2', 'pypdf2', 'pyyaml', 'guizero', 'python-dateutil', 'beautifulsoup4', 'torch',
                       'torchvision'],
-    include_package_data=True,
     package_data={'pathfinder.mapmaker.pytorch': ['*.pt'],
                   'pathfinder.utils': ['default_config.yaml']},
     test_suite='nose.collector',

@@ -1,4 +1,4 @@
-# Python-pathfinder-tools v0.4.1
+# Python-pathfinder-tools v0.4.2
 
 A set of utilities to do things related to the 
 Pathfinder tabletop role playing game. These tools are really intended 
