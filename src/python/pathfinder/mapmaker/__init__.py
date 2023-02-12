@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from enum import Enum
 from os.path import dirname, basename, abspath
 from pathlib import Path
+from typing import Literal
 
 import PyPDF2 as pdf
 from PIL import Image, ImageEnhance
+from PyPDF2.generic import IndirectObject
 from fpdf import FPDF
 from guizero import App, Picture
 
@@ -350,15 +352,15 @@ def split_image(im: Image, squares_wide: float, squares_high: float, border_nort
             logging.info(
                 'split_image: Using landscape orientation, {} by {} pages'.format(pages_horizontal_l, pages_vertical_l))
             return 'L', pages_horizontal_l, pages_vertical_l, \
-                   printable_height - zero_if_one(pages_horizontal_l, overlap_south), \
-                   printable_width - zero_if_one(pages_vertical_l, overlap_east)
+                printable_height - zero_if_one(pages_horizontal_l, overlap_south), \
+                printable_width - zero_if_one(pages_vertical_l, overlap_east)
         else:
             # Use Portrait orientation
             logging.info(
                 'split_image: Using portrait orientation, {} by {} pages'.format(pages_horizontal_p, pages_vertical_p))
             return 'P', pages_horizontal_p, pages_vertical_p, \
-                   printable_width - zero_if_one(pages_horizontal_p, overlap_east), \
-                   printable_height - zero_if_one(pages_vertical_p, overlap_south)
+                printable_width - zero_if_one(pages_horizontal_p, overlap_east), \
+                printable_height - zero_if_one(pages_vertical_p, overlap_south)
 
     orientation, pages_horizontal, pages_vertical, page_width, page_height = get_page_size()
 
@@ -488,10 +490,11 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
     :param min_height:
         Minimum height in pixels, below this images are rejected
     :return:
-        A generate of images from this PDF
+        A generator of images from this PDF
     """
 
-    def image_from_vobj(vobj, image_format='RGB'):
+    def image_from_vobj(vobj, image_format: Literal[
+        "1", "CMYK", "F", "HSV", "I", "L", "LAB", "P", "RGB", "RGBA", "RGBX", "YCbCr"] = 'RGB'):
         """
         This isn't an ideal method, it seems to have to ignore a lot of exceptions and assertion failures
         for some older PDF documents. It should, however, manage to extract most available images.
@@ -500,13 +503,19 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
         :param image_format:
         :return:
         """
+        # if vobj['/Subtype'] == '/Form' and '/Resources' in vobj:
+        #     print('found a form, retrieving underlying xobj')
+        #     sub_object = vobj['/Resources']['/XObject']
+        #     for key in sub_object:
+        #         print(sub_object[key])
+        #         return image_from_vobj(sub_object[key])
         if vobj['/Filter'] == '/FlateDecode':
             # A raw bitmap
             try:
                 buf = vobj.getData()
                 # Notice that we need metadata from the object
-                # so we can make sense of the image data
-                size = tuple(map(int, (vobj['/Width'], vobj['/Height'])))
+                # so that we can make sense of the image data
+                size = int(vobj['/Width']), int(vobj['/Height'])
                 try:
                     if isinstance(buf, str):
                         i = Image.frombytes(image_format, size, bytes(buf, 'UTF-8'), decoder_name='raw')
@@ -515,16 +524,22 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
                     return i
                 except ValueError as ve:
                     # We don't care about non-RGB images in this case
+                    print(f'value error : {ve}, size={size}')
                     pass
                 except TypeError as te:
                     # Sometimes buf is a string, pretty sure this is wrong but hey
+                    print(te)
                     pass
             except AssertionError:
+                print('assertion error!')
                 # Seems to come up with some older PDFs, possibly when trying to interpret mask images
                 pass
-        elif vobj['/Filter'] == '/DCTDecode':
+        elif vobj['/Filter'] == '/DCTDecode' or vobj['/Filter'] == '/JPXDecode':
             # A compressed image
             return Image.open(io.BytesIO(vobj._data))
+
+    # Keep track of indirect images we've seen
+    seen_images = set()
 
     def images_in_page(pdf_page):
         # Find the Resources block and look for images, or things into which we can recurse
@@ -532,18 +547,23 @@ def extract_images_from_pdf(pdf_filename: str, page=None, to_page=None, min_widt
         if '/XObject' in r:
             for k, v in r['/XObject'].items():
                 vobj = v.getObject()
-                if vobj['/Subtype'] != '/Image' or '/Filter' not in vobj:
+                if vobj['/Subtype'] not in ['/Image'] or '/Filter' not in vobj:
                     # Reject things that aren't images but recurse into groups
-                    if '/Resources' in vobj and '/Group' in vobj:
+                    if '/Resources' in vobj:
                         for sub_image in images_in_page(vobj):
                             if sub_image:
                                 yield sub_image
-                    continue
-                if img := image_from_vobj(vobj):
-                    # Find an SMask if available and apply it
-                    if mask_img := (image_from_vobj(vobj['/SMask'], image_format='L') if '/SMask' in vobj else None):
-                        img.putalpha(mask_img)
-                    yield img
+                elif img := image_from_vobj(vobj):
+                    if isinstance(v, IndirectObject) and v.idnum in seen_images:
+                        pass
+                    else:
+                        # Find an SMask if available and apply it
+                        if mask_img := (
+                                image_from_vobj(vobj['/SMask'], image_format='L') if '/SMask' in vobj else None):
+                            img.putalpha(mask_img)
+                        if isinstance(v, IndirectObject):
+                            seen_images.add(v.idnum)
+                        yield img
 
     # Read in the PDF file
     in_pdf = pdf.PdfFileReader(pdf_filename)
